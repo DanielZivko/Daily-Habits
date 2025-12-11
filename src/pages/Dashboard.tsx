@@ -5,8 +5,7 @@ import type { Task, Group } from "../types";
 import { Header } from "../components/Header";
 import { GroupTabs } from "../components/GroupTabs";
 import { TaskList } from "../components/TaskList";
-import { format, addDays, addWeeks, addMonths, addHours, addMinutes } from "date-fns";
-import { ptBR } from "date-fns/locale";
+import { addDays, addWeeks, addMonths, addHours, addMinutes } from "date-fns";
 import { Pencil, Trash2, Plus } from "lucide-react";
 import { Button } from "../components/ui/Button";
 import { Modal } from "../components/ui/Modal";
@@ -305,7 +304,7 @@ export const Dashboard: React.FC = () => {
                 </button>
                 <div>
                     <h2 className="text-2xl font-bold text-gray-900">
-                    {selectedGroup ? selectedGroup.title : 'Bem-vindo'} - {format(new Date(), "d 'de' MMMM", { locale: ptBR })}
+                    {selectedGroup ? selectedGroup.title : 'Bem-vindo'}
                     </h2>
                     <p className="text-gray-500">
                     {selectedGroup ? (
