@@ -3,13 +3,27 @@ import { db } from '../db/db';
 import { Header } from '../components/Header';
 import { Button } from '../components/ui/Button';
 import { Card } from '../components/ui/Card';
-import { Download, Upload, Trash2, ArrowLeft } from 'lucide-react';
+import { Download, Upload, Trash2, ArrowLeft, RefreshCw, Check } from 'lucide-react';
 import { Link } from 'react-router-dom';
+import { useRegisterSW } from 'virtual:pwa-register/react';
 
 export const Settings: React.FC = () => {
     const fileInputRef = useRef<HTMLInputElement>(null);
     const [isLoading, setIsLoading] = useState(false);
     const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
+    const [updateStatus, setUpdateStatus] = useState<'idle' | 'checking' | 'available' | 'latest'>('idle');
+
+    const {
+        needRefresh: [needRefresh, setNeedRefresh],
+        updateServiceWorker,
+    } = useRegisterSW({
+        onRegistered(r) {
+            console.log('SW Registered: ' + r)
+        },
+        onRegisterError(error) {
+            console.log('SW registration error', error)
+        },
+    });
 
     const handleExport = async () => {
         try {
@@ -101,6 +115,34 @@ export const Settings: React.FC = () => {
         }
     }
 
+    const checkForUpdates = async () => {
+        setUpdateStatus('checking');
+        
+        if ('serviceWorker' in navigator) {
+            try {
+                const registration = await navigator.serviceWorker.ready;
+                await registration.update();
+                
+                // If needRefresh becomes true, it will be handled by the hook state
+                // Otherwise we assume latest after a short delay if no update found
+                setTimeout(() => {
+                    if (!needRefresh) {
+                        setUpdateStatus('latest');
+                        setTimeout(() => setUpdateStatus('idle'), 3000);
+                    }
+                }, 1000);
+                
+            } catch (e) {
+                console.error("Error checking for updates:", e);
+                setUpdateStatus('idle');
+                setMessage({ type: 'error', text: 'Erro ao verificar atualizações.' });
+            }
+        } else {
+             setUpdateStatus('idle');
+             setMessage({ type: 'error', text: 'Service Worker não suportado ou em modo de desenvolvimento.' });
+        }
+    };
+
     return (
         <div className="min-h-screen bg-gray-50 pb-20">
             <Header />
@@ -171,8 +213,42 @@ export const Settings: React.FC = () => {
                     <section>
                          <h2 className="mb-4 text-lg font-semibold text-gray-800">Sobre</h2>
                          <Card className="p-6">
-                            <p className="text-gray-600">Daily Habits PWA v1.0.0</p>
-                            <p className="text-sm text-gray-400 mt-2">Desenvolvido com React, Vite e Dexie.js</p>
+                            <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+                                <div>
+                                    <p className="text-gray-600 font-medium">Daily Habits PWA v1.0.0</p>
+                                    <p className="text-sm text-gray-400 mt-1">Desenvolvido com React, Vite e Dexie.js</p>
+                                </div>
+                                
+                                <Button 
+                                    variant="outline" 
+                                    size="sm"
+                                    onClick={() => needRefresh ? updateServiceWorker(true) : checkForUpdates()}
+                                    disabled={updateStatus === 'checking'}
+                                    className={needRefresh ? "bg-blue-50 text-blue-600 border-blue-200" : ""}
+                                >
+                                    {needRefresh ? (
+                                        <>
+                                            <Download size={16} className="mr-2" />
+                                            Baixar e Instalar
+                                        </>
+                                    ) : updateStatus === 'checking' ? (
+                                        <>
+                                            <RefreshCw size={16} className="mr-2 animate-spin" />
+                                            Verificando...
+                                        </>
+                                    ) : updateStatus === 'latest' ? (
+                                        <>
+                                            <Check size={16} className="mr-2 text-green-500" />
+                                            Versão mais recente
+                                        </>
+                                    ) : (
+                                        <>
+                                            <RefreshCw size={16} className="mr-2" />
+                                            Procurar Atualizações
+                                        </>
+                                    )}
+                                </Button>
+                            </div>
                          </Card>
                     </section>
                 </div>
