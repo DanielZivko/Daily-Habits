@@ -1,10 +1,10 @@
 import Dexie, { type EntityTable } from 'dexie';
-import type { Group, Task } from '../types';
+import type { Group, Task, TaskHistory } from '../types';
 
 export interface SyncQueueItem {
   id?: number;
   userId?: string;
-  table: 'tasks' | 'groups';
+  table: 'tasks' | 'groups' | 'task_history';
   type: 'create' | 'update' | 'delete';
   data: any;
   primKey: string; // UUID string
@@ -14,6 +14,7 @@ export interface SyncQueueItem {
 export class DailyHabitsDatabase extends Dexie {
   groups!: EntityTable<Group, 'id'>;
   tasks!: EntityTable<Task, 'id'>;
+  taskHistory!: EntityTable<TaskHistory, 'id'>;
   syncQueue!: EntityTable<SyncQueueItem, 'id'>;
 
   constructor() {
@@ -50,6 +51,14 @@ export class DailyHabitsDatabase extends Dexie {
       await tx.table('tasks').clear();
       await tx.table('syncQueue').clear();
       console.log('[DB] Migração concluída. Dados limpos.');
+    });
+
+    // Versão 8: Adiciona histórico de tarefas
+    this.version(8).stores({
+      groups: 'id, userId, title, order',
+      tasks: 'id, userId, groupId, status, date, type',
+      taskHistory: 'id, userId, taskId, date', // Novo índice
+      syncQueue: '++id, userId, table, type, date'
     });
   }
 }

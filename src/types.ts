@@ -7,6 +7,14 @@ export interface Group {
   order: number;
 }
 
+export interface TaskHistory {
+  id: string;
+  userId?: string;
+  taskId: string;
+  date: Date;
+  value?: number; // Para tarefas com contagem (opcional, default 1)
+}
+
 export type TaskType = 'immediate' | 'recurrent' | 'objective';
 
 export interface Task {
@@ -52,4 +60,12 @@ export interface Task {
   // Deprecated/Legacy fields (kept for migration safety if needed, or removed if clean slate)
   // Removing to enforce new schema
   order?: number; // For manual ordering (e.g. objectives)
+}
+
+export interface TaskHistory {
+  id: string;
+  userId?: string;
+  taskId: string;
+  date: Date;
+  value?: number;
 }

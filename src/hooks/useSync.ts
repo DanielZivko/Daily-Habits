@@ -3,7 +3,7 @@ import Dexie from 'dexie';
 import { db } from '../db/db';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
-import type { Group, Task } from '../types';
+import type { Group, Task, TaskHistory } from '../types';
 
 // Mappers para converter dados do Supabase (snake_case) para o formato local (camelCase)
 const mapGroupFromSupabase = (g: any, userId: string): Group => ({
@@ -36,6 +36,14 @@ const mapTaskFromSupabase = (t: any, userId: string): Task => ({
   tags: t.tags
 });
 
+const mapTaskHistoryFromSupabase = (th: any, userId: string): TaskHistory => ({
+  id: th.id,
+  userId: userId,
+  taskId: th.task_id,
+  date: new Date(th.date),
+  value: th.value
+});
+
 export function useSync() {
   const { user } = useAuth();
   const isSyncingRef = useRef(false);
@@ -58,7 +66,11 @@ export function useSync() {
 
       for (const item of queueItems) {
         try {
-          const tableName = item.table === 'tasks' ? 'cloud_tasks' : 'cloud_groups';
+          let tableName = '';
+          if (item.table === 'tasks') tableName = 'cloud_tasks';
+          else if (item.table === 'groups') tableName = 'cloud_groups';
+          else if (item.table === 'task_history') tableName = 'cloud_task_history';
+
           const { userId: _, ...cleanData } = item.data; 
 
           // Formata datas para ISO string
@@ -67,6 +79,8 @@ export function useSync() {
              if (cleanData.date) dateFields.date = new Date(cleanData.date).toISOString();
              if (cleanData.lastCompletedDate) dateFields.last_completed_date = new Date(cleanData.lastCompletedDate).toISOString();
              if (cleanData.deadline) dateFields.deadline = new Date(cleanData.deadline).toISOString();
+          } else if (item.table === 'task_history') {
+             if (cleanData.date) dateFields.date = new Date(cleanData.date).toISOString();
           }
 
           // Mapeamento camelCase (local) -> snake_case (Supabase)
@@ -101,6 +115,14 @@ export function useSync() {
                   color_tag: cleanData.colorTag, // camelCase -> snake_case
                   tags: cleanData.tags
               };
+          } else if (tableName === 'cloud_task_history') {
+              finalPayload = {
+                  user_id: user.id,
+                  id: cleanData.id,
+                  task_id: cleanData.taskId,
+                  date: dateFields.date,
+                  value: cleanData.value
+              };
           }
 
           if (item.type === 'create' || item.type === 'update') {
@@ -130,27 +152,28 @@ export function useSync() {
     try {
       console.log('[Sync] Iniciando Pull...');
       
-      const [groupsRes, tasksRes] = await Promise.all([
+      const [groupsRes, tasksRes, historyRes] = await Promise.all([
         supabase.from('cloud_groups').select('*'),
-        supabase.from('cloud_tasks').select('*')
+        supabase.from('cloud_tasks').select('*'),
+        supabase.from('cloud_task_history').select('*')
       ]);
 
       if (groupsRes.error) throw groupsRes.error;
       if (tasksRes.error) throw tasksRes.error;
+      if (historyRes.error) throw historyRes.error;
 
-      await db.transaction('rw', db.groups, db.tasks, async () => {
+      await db.transaction('rw', db.groups, db.tasks, db.taskHistory, async () => {
          // @ts-ignore
          Dexie.currentTransaction.source = 'sync';
          
-         // REMOVIDO: Delete agressivo que apagava dados locais pendentes
-         // await db.groups.where('userId').equals(user.id).delete();
-         // await db.tasks.where('userId').equals(user.id).delete();
-
          if (groupsRes.data) {
            await db.groups.bulkPut(groupsRes.data.map(g => mapGroupFromSupabase(g, user.id)));
          }
          if (tasksRes.data) {
            await db.tasks.bulkPut(tasksRes.data.map(t => mapTaskFromSupabase(t, user.id)));
+         }
+         if (historyRes.data) {
+            await db.taskHistory.bulkPut(historyRes.data.map(h => mapTaskHistoryFromSupabase(h, user.id)));
          }
       });
       console.log('[Sync] Pull concluído.');
@@ -205,6 +228,25 @@ export function useSync() {
           });
         }
       )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'cloud_task_history', filter: `user_id=eq.${user.id}` },
+        async (payload) => {
+            console.log('[Realtime] History change:', payload.eventType);
+            if (isSyncingRef.current) return;
+  
+            await db.transaction('rw', db.taskHistory, async () => {
+              // @ts-ignore
+              Dexie.currentTransaction.source = 'sync';
+              
+              if (payload.eventType === 'DELETE') {
+                await db.taskHistory.delete(payload.old.id);
+              } else {
+                await db.taskHistory.put(mapTaskHistoryFromSupabase(payload.new, user.id));
+              }
+            });
+          }
+      )
       .subscribe();
 
     return () => {
@@ -251,7 +293,7 @@ export function useSync() {
   useEffect(() => {
     if (!user) return;
 
-    const handleLocalChange = (table: 'tasks' | 'groups', type: 'create' | 'update' | 'delete', obj: any, key: any) => {
+    const handleLocalChange = (table: 'tasks' | 'groups' | 'task_history', type: 'create' | 'update' | 'delete', obj: any, key: any) => {
       if (type !== 'delete' && obj.userId !== user.id) return;
 
       setTimeout(async () => {
@@ -283,17 +325,17 @@ export function useSync() {
       }, 0);
     };
 
-    const creatingHook = (table: 'tasks' | 'groups') => (primKey: any, obj: any, trans: any) => {
+    const creatingHook = (table: 'tasks' | 'groups' | 'task_history') => (primKey: any, obj: any, trans: any) => {
         if (trans.source === 'sync') return;
         if (!obj.userId) obj.userId = user.id; 
         handleLocalChange(table, 'create', { ...obj, id: primKey }, primKey);
     };
-    const updatingHook = (table: 'tasks' | 'groups') => (mods: any, primKey: any, obj: any, trans: any) => {
+    const updatingHook = (table: 'tasks' | 'groups' | 'task_history') => (mods: any, primKey: any, obj: any, trans: any) => {
         if (trans.source === 'sync') return;
         const newObj = { ...obj, ...mods };
         handleLocalChange(table, 'update', newObj, primKey);
     };
-    const deletingHook = (table: 'tasks' | 'groups') => (primKey: any, obj: any, trans: any) => {
+    const deletingHook = (table: 'tasks' | 'groups' | 'task_history') => (primKey: any, obj: any, trans: any) => {
         if (trans.source === 'sync') return;
         handleLocalChange(table, 'delete', obj, primKey);
     };
@@ -306,6 +348,10 @@ export function useSync() {
     db.groups.hook('updating', updatingHook('groups'));
     db.groups.hook('deleting', deletingHook('groups'));
 
+    db.taskHistory.hook('creating', creatingHook('task_history'));
+    db.taskHistory.hook('updating', updatingHook('task_history'));
+    db.taskHistory.hook('deleting', deletingHook('task_history'));
+
     return () => {
         db.tasks.hook('creating').unsubscribe(creatingHook('tasks'));
         db.tasks.hook('updating').unsubscribe(updatingHook('tasks'));
@@ -314,9 +360,11 @@ export function useSync() {
         db.groups.hook('creating').unsubscribe(creatingHook('groups'));
         db.groups.hook('updating').unsubscribe(updatingHook('groups'));
         db.groups.hook('deleting').unsubscribe(deletingHook('groups'));
+
+        db.taskHistory.hook('creating').unsubscribe(creatingHook('task_history'));
+        db.taskHistory.hook('updating').unsubscribe(updatingHook('task_history'));
+        db.taskHistory.hook('deleting').unsubscribe(deletingHook('task_history'));
     };
 
   }, [user, processSyncQueue]);
 }
-
-

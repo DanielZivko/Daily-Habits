@@ -83,23 +83,47 @@ export const Dashboard: React.FC = () => {
              else if (task.frequency === 'minutes') nextDate = addMinutes(new Date(), interval);
         }
         
-        await db.tasks.update(task.id, {
-            lastCompletedDate: new Date(),
-            date: nextDate,
-            status: false
+        await db.transaction('rw', db.tasks, db.taskHistory, async () => {
+            await db.tasks.update(task.id, {
+                lastCompletedDate: new Date(),
+                date: nextDate,
+                status: false
+            });
+            
+            // Add history
+            await db.taskHistory.add({
+                id: crypto.randomUUID(),
+                userId: currentUserId,
+                taskId: task.id,
+                date: new Date(),
+                value: 1
+            });
         });
         
     } else {
         // Toggle Logic for Immediate and Objective tasks
-        if (task.type === 'objective') {
-            const newStatus = !task.status;
-            await db.tasks.update(task.id, { 
-                status: newStatus,
-                lastCompletedDate: newStatus ? new Date() : task.lastCompletedDate
-            });
-        } else {
-            await db.tasks.update(task.id, { status: !task.status });
-        }
+        const isCompleting = !task.status;
+        
+        await db.transaction('rw', db.tasks, db.taskHistory, async () => {
+             if (task.type === 'objective') {
+                await db.tasks.update(task.id, { 
+                    status: isCompleting,
+                    lastCompletedDate: isCompleting ? new Date() : task.lastCompletedDate
+                });
+            } else {
+                await db.tasks.update(task.id, { status: isCompleting });
+            }
+
+            if (isCompleting) {
+                await db.taskHistory.add({
+                    id: crypto.randomUUID(),
+                    userId: currentUserId,
+                    taskId: task.id,
+                    date: new Date(),
+                    value: 1
+                });
+            }
+        });
     }
   };
 

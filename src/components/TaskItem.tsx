@@ -3,6 +3,7 @@ import type { Task } from "../types";
 import { cn } from "../lib/utils";
 import { Checkbox } from "./ui/Checkbox";
 import { ProgressBar } from "./ui/ProgressBar";
+import { TaskStatisticsChart } from "./TaskStatisticsChart";
 import { Pencil, Trash2, Flag, Copy } from "lucide-react";
 import { format, differenceInMilliseconds, formatDistanceToNow } from "date-fns";
 import { ptBR } from "date-fns/locale";
@@ -21,9 +22,21 @@ export const TaskItem: React.FC<TaskItemProps> = ({ task, onToggle, onEdit, onDu
   const [isHovered, setIsHovered] = React.useState(false);
   const [progress, setProgress] = useState(0);
 
+  // Calcula a duração fixa do intervalo de recorrência em milissegundos
+  const getRecurrenceIntervalMs = (frequency: string, interval: number): number => {
+    switch (frequency) {
+      case 'minutes': return interval * 60 * 1000;
+      case 'hours': return interval * 60 * 60 * 1000;
+      case 'daily': return interval * 24 * 60 * 60 * 1000;
+      case 'weekly': return interval * 7 * 24 * 60 * 60 * 1000;
+      case 'monthly': return interval * 30 * 24 * 60 * 60 * 1000; // aproximado
+      default: return interval * 24 * 60 * 60 * 1000;
+    }
+  };
+
   // Calcular progresso baseado no tempo para tarefas recorrentes
   useEffect(() => {
-    if (task.type !== 'recurrent' || !task.frequency || !task.date) return;
+    if (task.type !== 'recurrent' || !task.frequency) return;
 
     // Se nunca foi completada, progresso é 0 e não calculamos nada
     if (!task.lastCompletedDate) {
@@ -33,14 +46,11 @@ export const TaskItem: React.FC<TaskItemProps> = ({ task, onToggle, onEdit, onDu
 
     const calculateProgress = () => {
       const now = new Date();
-      const dueDate = new Date(task.date);
+      const lastCompleted = new Date(task.lastCompletedDate!);
       
-      // Estimar data de início do ciclo (Last Completed)
-      // Garantido que existe pelo check acima
-      let startDate = new Date(task.lastCompletedDate!);
-
-      const totalDuration = differenceInMilliseconds(dueDate, startDate);
-      const elapsed = differenceInMilliseconds(now, startDate);
+      // Usa a duração FIXA do intervalo de recorrência (não a diferença entre datas)
+      const totalDuration = getRecurrenceIntervalMs(task.frequency!, task.interval || 1);
+      const elapsed = differenceInMilliseconds(now, lastCompleted);
       
       // Se elapsed > totalDuration, significa que está atrasado (100% preenchido)
       const percent = Math.min(100, Math.max(0, (elapsed / totalDuration) * 100));
@@ -48,7 +58,7 @@ export const TaskItem: React.FC<TaskItemProps> = ({ task, onToggle, onEdit, onDu
     };
 
     calculateProgress();
-    const timer = setInterval(calculateProgress, 1000); // Atualiza a cada segundo para minutos/horas
+    const timer = setInterval(calculateProgress, 1000); // Atualiza a cada segundo
 
     return () => clearInterval(timer);
   }, [task]);
@@ -194,6 +204,7 @@ export const TaskItem: React.FC<TaskItemProps> = ({ task, onToggle, onEdit, onDu
             isExpanded ? "max-h-[2000px] opacity-100 mt-2" : "max-h-0 opacity-0"
         )}>
              {task.description && <p className="text-xs text-gray-500 border-t border-gray-100 pt-2 whitespace-pre-wrap">{task.description}</p>}
+             <TaskStatisticsChart taskId={task.id} enabled={isExpanded} />
         </div>
       </div>
     );
@@ -247,6 +258,7 @@ export const TaskItem: React.FC<TaskItemProps> = ({ task, onToggle, onEdit, onDu
             isExpanded ? "max-h-[2000px] opacity-100 mt-2" : "max-h-0 opacity-0"
         )}>
              {task.description && <div className="text-xs text-gray-500 border-t border-gray-100 pt-2 whitespace-pre-wrap">{task.description}</div>}
+             <TaskStatisticsChart taskId={task.id} enabled={isExpanded} />
         </div>
       </div>
     );
@@ -305,6 +317,7 @@ export const TaskItem: React.FC<TaskItemProps> = ({ task, onToggle, onEdit, onDu
             isExpanded ? "max-h-[2000px] opacity-100 mt-2" : "max-h-0 opacity-0"
         )}>
              {task.description && <p className="text-xs text-gray-500 border-t border-gray-100 pt-2 whitespace-pre-wrap">{task.description}</p>}
+             <TaskStatisticsChart taskId={task.id} enabled={isExpanded} />
         </div>
       </div>
     );
