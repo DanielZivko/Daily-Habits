@@ -227,7 +227,8 @@ export const Dashboard: React.FC = () => {
               date: new Date(),
               lastCompletedDate: undefined,
               type: taskData.type || 'immediate',
-              groupId: taskData.groupId || selectedGroupId || targetGroupId
+              groupId: taskData.groupId || selectedGroupId || targetGroupId,
+              id: crypto.randomUUID() // Force new UUID for duplicated tasks to avoid collision
           } as Task);
       }
       setIsTaskModalOpen(false);
