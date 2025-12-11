@@ -3,7 +3,9 @@ import { db } from '../db/db';
 import { Header } from '../components/Header';
 import { Button } from '../components/ui/Button';
 import { Card } from '../components/ui/Card';
-import { Download, Upload, Trash2, ArrowLeft, RefreshCw, Check } from 'lucide-react';
+import { Input } from '../components/ui/Input';
+import { Modal } from '../components/ui/Modal';
+import { Download, Upload, Trash2, ArrowLeft, RefreshCw, Check, AlertTriangle } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 // import { useRegisterSW } from 'virtual:pwa-register/react';
@@ -16,6 +18,11 @@ export const Settings: React.FC = () => {
     const [isLoading, setIsLoading] = useState(false);
     const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
     const [updateStatus, setUpdateStatus] = useState<'idle' | 'checking' | 'available' | 'latest'>('idle');
+    
+    // Estado para o modal de confirmação de exclusão
+    const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+    const [deleteConfirmText, setDeleteConfirmText] = useState('');
+    const DELETE_CONFIRMATION_WORD = 'APAGAR';
 
     // Mock hook for build without PWA plugin
     const needRefresh = [false];
@@ -24,14 +31,35 @@ export const Settings: React.FC = () => {
     const handleExport = async () => {
         try {
             setIsLoading(true);
+            
+            // Busca todos os dados do usuário
             const groups = await db.groups.where('userId').equals(currentUserId).toArray();
             const tasks = await db.tasks.where('userId').equals(currentUserId).toArray();
+            const taskHistory = await db.taskHistory.where('userId').equals(currentUserId).toArray();
+            
+            // Serializa as datas para ISO string para garantir compatibilidade
+            const serializedTasks = tasks.map(task => ({
+                ...task,
+                date: task.date instanceof Date ? task.date.toISOString() : task.date,
+                lastCompletedDate: task.lastCompletedDate instanceof Date 
+                    ? task.lastCompletedDate.toISOString() 
+                    : task.lastCompletedDate,
+                deadline: task.deadline instanceof Date 
+                    ? task.deadline.toISOString() 
+                    : task.deadline,
+            }));
+            
+            const serializedHistory = taskHistory.map(h => ({
+                ...h,
+                date: h.date instanceof Date ? h.date.toISOString() : h.date,
+            }));
             
             const data = {
-                version: 1,
+                version: 2, // Versão 2 inclui taskHistory
                 date: new Date().toISOString(),
                 groups,
-                tasks
+                tasks: serializedTasks,
+                taskHistory: serializedHistory
             };
             
             const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
@@ -44,7 +72,8 @@ export const Settings: React.FC = () => {
             document.body.removeChild(a);
             URL.revokeObjectURL(url);
             
-            setMessage({ type: 'success', text: 'Backup exportado com sucesso!' });
+            const totalItems = groups.length + tasks.length + taskHistory.length;
+            setMessage({ type: 'success', text: `Backup exportado com sucesso! (${totalItems} itens)` });
         } catch (error) {
             console.error('Export failed:', error);
             setMessage({ type: 'error', text: 'Erro ao exportar backup.' });
@@ -72,20 +101,44 @@ export const Settings: React.FC = () => {
                     throw new Error('Formato de arquivo inválido');
                 }
 
-                await db.transaction('rw', db.groups, db.tasks, async () => {
-                    // Limpa dados apenas do usuário atual
+                await db.transaction('rw', db.groups, db.tasks, db.taskHistory, async () => {
+                    // Limpa dados do usuário atual
                     await db.groups.where('userId').equals(currentUserId).delete();
                     await db.tasks.where('userId').equals(currentUserId).delete();
+                    await db.taskHistory.where('userId').equals(currentUserId).delete();
                     
-                    // Prepara dados para importação, garantindo userId correto
-                    const groupsToImport = data.groups.map((g: any) => ({ ...g, userId: currentUserId }));
-                    const tasksToImport = data.tasks.map((t: any) => ({ ...t, userId: currentUserId }));
+                    // Prepara grupos para importação
+                    const groupsToImport = data.groups.map((g: any) => ({ 
+                        ...g, 
+                        userId: currentUserId 
+                    }));
+                    
+                    // Prepara tarefas para importação, convertendo datas de volta
+                    const tasksToImport = data.tasks.map((t: any) => ({ 
+                        ...t, 
+                        userId: currentUserId,
+                        date: t.date ? new Date(t.date) : new Date(),
+                        lastCompletedDate: t.lastCompletedDate ? new Date(t.lastCompletedDate) : undefined,
+                        deadline: t.deadline ? new Date(t.deadline) : undefined,
+                    }));
+                    
+                    // Prepara histórico para importação (se existir no backup)
+                    const historyToImport = (data.taskHistory || []).map((h: any) => ({
+                        ...h,
+                        userId: currentUserId,
+                        date: h.date ? new Date(h.date) : new Date(),
+                    }));
                     
                     await db.groups.bulkAdd(groupsToImport);
                     await db.tasks.bulkAdd(tasksToImport);
+                    
+                    if (historyToImport.length > 0) {
+                        await db.taskHistory.bulkAdd(historyToImport);
+                    }
                 });
 
-                setMessage({ type: 'success', text: 'Dados importados com sucesso!' });
+                const totalItems = data.groups.length + data.tasks.length + (data.taskHistory?.length || 0);
+                setMessage({ type: 'success', text: `Dados importados com sucesso! (${totalItems} itens)` });
             } catch (error) {
                 console.error('Import failed:', error);
                 setMessage({ type: 'error', text: 'Erro ao importar backup. Verifique o arquivo.' });
@@ -99,23 +152,37 @@ export const Settings: React.FC = () => {
         }
     };
 
+    const handleOpenDeleteModal = () => {
+        setDeleteConfirmText('');
+        setIsDeleteModalOpen(true);
+    };
+
+    const handleCloseDeleteModal = () => {
+        setDeleteConfirmText('');
+        setIsDeleteModalOpen(false);
+    };
+
     const handleClearData = async () => {
-        if (confirm('Tem certeza absoluta? Esta ação não pode ser desfeita e apagará TODOS os seus dados.')) {
-             try {
-                setIsLoading(true);
-                await db.transaction('rw', db.groups, db.tasks, async () => {
-                    await db.groups.where('userId').equals(currentUserId).delete();
-                    await db.tasks.where('userId').equals(currentUserId).delete();
-                });
-                setMessage({ type: 'success', text: 'Todos os seus dados foram apagados.' });
-             } catch (error) {
-                 setMessage({ type: 'error', text: 'Erro ao limpar dados.' });
-             } finally {
-                 setIsLoading(false);
-                 setTimeout(() => setMessage(null), 3000);
-             }
+        if (deleteConfirmText !== DELETE_CONFIRMATION_WORD) {
+            return;
         }
-    }
+
+        try {
+            setIsLoading(true);
+            await db.transaction('rw', db.groups, db.tasks, db.taskHistory, async () => {
+                await db.groups.where('userId').equals(currentUserId).delete();
+                await db.tasks.where('userId').equals(currentUserId).delete();
+                await db.taskHistory.where('userId').equals(currentUserId).delete();
+            });
+            setMessage({ type: 'success', text: 'Todos os seus dados foram apagados.' });
+            handleCloseDeleteModal();
+        } catch (error) {
+            setMessage({ type: 'error', text: 'Erro ao limpar dados.' });
+        } finally {
+            setIsLoading(false);
+            setTimeout(() => setMessage(null), 3000);
+        }
+    };
 
     const checkForUpdates = async () => {
         setUpdateStatus('checking');
@@ -202,9 +269,9 @@ export const Settings: React.FC = () => {
                             <div className="border-t border-gray-100 pt-4 flex items-center justify-between p-2">
                                 <div>
                                     <h3 className="font-medium text-red-600">Apagar Tudo</h3>
-                                    <p className="text-sm text-gray-500">Remove permanentemente todos os grupos e tarefas.</p>
+                                    <p className="text-sm text-gray-500">Remove permanentemente todos os grupos, tarefas e histórico.</p>
                                 </div>
-                                <Button onClick={handleClearData} disabled={isLoading} variant="danger" className="flex gap-2">
+                                <Button onClick={handleOpenDeleteModal} disabled={isLoading} variant="danger" className="flex gap-2">
                                     <Trash2 size={16} />
                                     Limpar
                                 </Button>
@@ -255,6 +322,55 @@ export const Settings: React.FC = () => {
                     </section>
                 </div>
             </main>
+
+            {/* Modal de confirmação para apagar dados */}
+            <Modal 
+                isOpen={isDeleteModalOpen} 
+                onClose={handleCloseDeleteModal}
+                title=""
+            >
+                <div className="text-center">
+                    <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-red-100">
+                        <AlertTriangle className="h-8 w-8 text-red-600" />
+                    </div>
+                    
+                    <h3 className="mb-2 text-xl font-bold text-gray-900">Apagar todos os dados?</h3>
+                    
+                    <p className="mb-4 text-sm text-gray-500">
+                        Esta ação é <strong>irreversível</strong>. Todos os seus grupos, tarefas e histórico de estatísticas serão permanentemente excluídos.
+                    </p>
+                    
+                    <div className="mb-4 rounded-lg bg-red-50 p-3 text-sm text-red-800">
+                        Para confirmar, digite <strong>{DELETE_CONFIRMATION_WORD}</strong> abaixo:
+                    </div>
+                    
+                    <Input
+                        value={deleteConfirmText}
+                        onChange={(e) => setDeleteConfirmText(e.target.value.toUpperCase())}
+                        placeholder={`Digite ${DELETE_CONFIRMATION_WORD}`}
+                        className="mb-4 text-center font-mono text-lg tracking-widest"
+                        autoFocus
+                    />
+                    
+                    <div className="flex gap-3">
+                        <Button 
+                            variant="outline" 
+                            className="flex-1"
+                            onClick={handleCloseDeleteModal}
+                        >
+                            Cancelar
+                        </Button>
+                        <Button 
+                            variant="danger" 
+                            className="flex-1"
+                            onClick={handleClearData}
+                            disabled={deleteConfirmText !== DELETE_CONFIRMATION_WORD || isLoading}
+                        >
+                            {isLoading ? 'Apagando...' : 'Confirmar Exclusão'}
+                        </Button>
+                    </div>
+                </div>
+            </Modal>
         </div>
     );
 };

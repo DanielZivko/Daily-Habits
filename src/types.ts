@@ -61,11 +61,3 @@ export interface Task {
   // Removing to enforce new schema
   order?: number; // For manual ordering (e.g. objectives)
 }
-
-export interface TaskHistory {
-  id: string;
-  userId?: string;
-  taskId: string;
-  date: Date;
-  value?: number;
-}
