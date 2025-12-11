@@ -14,7 +14,7 @@ export const Settings: React.FC = () => {
     const [updateStatus, setUpdateStatus] = useState<'idle' | 'checking' | 'available' | 'latest'>('idle');
 
     const {
-        needRefresh: [needRefresh, setNeedRefresh],
+        needRefresh: [needRefresh],
         updateServiceWorker,
     } = useRegisterSW({
         onRegistered(r) {
