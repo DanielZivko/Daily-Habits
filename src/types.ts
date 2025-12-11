@@ -29,6 +29,11 @@ export interface Task {
     unit?: string;
   }[];
 
+  // Legacy/Seeding fields (Optional to prevent build errors)
+  currentProgress?: number;
+  targetProgress?: number;
+  unit?: string;
+
   // Legacy Measure fields (kept for migration/compatibility if needed, but preferably unused)
   measureDescription?: string; 
   measureValue?: string;

@@ -4,7 +4,7 @@ import { cn } from "../lib/utils";
 import { Checkbox } from "./ui/Checkbox";
 import { ProgressBar } from "./ui/ProgressBar";
 import { Pencil, Trash2, Flag, Copy } from "lucide-react";
-import { format, addDays, addWeeks, addMonths, addHours, addMinutes, differenceInMilliseconds, formatDistanceToNow } from "date-fns";
+import { format, differenceInMilliseconds, formatDistanceToNow } from "date-fns";
 import { ptBR } from "date-fns/locale";
 
 interface TaskItemProps {
@@ -34,7 +34,6 @@ export const TaskItem: React.FC<TaskItemProps> = ({ task, onToggle, onEdit, onDu
     const calculateProgress = () => {
       const now = new Date();
       const dueDate = new Date(task.date);
-      const interval = task.interval || 1;
       
       // Estimar data de início do ciclo (Last Completed)
       // Garantido que existe pelo check acima

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { db } from "../db/db";
-import type { Group, Task, TaskType } from "../types";
+import type { Task, TaskType } from "../types";
 import { Button } from "./ui/Button";
 import { Input } from "./ui/Input";
 import { Zap, RotateCw, Flag, Plus, Trash2 } from "lucide-react";

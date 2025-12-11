@@ -1,4 +1,4 @@
-import React, { useRef, useState, useEffect } from "react";
+import React, { useState, useEffect } from "react";
 import type { Task } from "../types";
 import { TaskItem } from "./TaskItem";
 import { AlertCircle, RotateCw, Flag } from "lucide-react";

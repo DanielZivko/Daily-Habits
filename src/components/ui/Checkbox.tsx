@@ -1,5 +1,4 @@
 import React from "react";
-import { cn } from "../../lib/utils";
 import { Check } from "lucide-react";
 
 interface CheckboxProps extends React.InputHTMLAttributes<HTMLInputElement> {
@@ -26,7 +25,3 @@ export const Checkbox = React.forwardRef<HTMLInputElement, CheckboxProps>(
   }
 );
 Checkbox.displayName = "Checkbox";
-
-
-
-

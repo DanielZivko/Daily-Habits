@@ -4,7 +4,6 @@ import { Link } from "react-router-dom";
 import { Input } from "./ui/Input";
 import { db } from "../db/db";
 import { useLiveQuery } from "dexie-react-hooks";
-import type { Task, Group } from "../types";
 
 interface HeaderProps {
   onGroupSelect?: (groupId: number) => void;

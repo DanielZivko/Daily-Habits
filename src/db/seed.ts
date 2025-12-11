@@ -13,12 +13,7 @@ export async function seedDatabase() {
     order: 1
   });
 
-  const personalGroupId = await db.groups.add({
-    title: 'Pessoal',
-    icon: 'Home',
-    color: '#10b981', // emerald-500
-    order: 2
-  });
+  // Removed personalGroupId as unused variable
 
   const healthGroupId = await db.groups.add({
     title: 'Saúde',
@@ -115,7 +110,3 @@ export async function seedDatabase() {
   
   console.log('Database seeded successfully!');
 }
-
-
-
-
