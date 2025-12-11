@@ -302,21 +302,21 @@ export const Dashboard: React.FC = () => {
           <div className="flex gap-3">
              <Button 
                 variant="ghost" 
-                className="hidden text-gray-500 md:flex md:gap-2"
+                className="text-gray-500 gap-2"
                 onClick={() => selectedGroup && handleEditGroup(selectedGroup)}
                 disabled={!selectedGroup}
              >
                 <Pencil size={16} />
-                Editar
+                <span className="hidden md:inline">Editar</span>
              </Button>
              <Button 
                 variant="danger" 
-                className="hidden bg-red-50 text-red-600 hover:bg-red-100 md:flex md:gap-2"
+                className="bg-red-50 text-red-600 hover:bg-red-100 gap-2"
                 onClick={() => selectedGroup && handleDeleteGroup(selectedGroup)}
                 disabled={!selectedGroup}
              >
                 <Trash2 size={16} />
-                Excluir
+                <span className="hidden md:inline">Excluir</span>
              </Button>
           </div>
         </div>

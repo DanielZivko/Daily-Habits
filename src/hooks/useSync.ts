@@ -5,6 +5,35 @@ import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
 import type { Group, Task } from '../types';
 
+// Mappers para converter dados do Supabase para o formato local
+const mapGroupFromSupabase = (g: any): Group => ({
+  id: Number(g.id),
+  title: g.title,
+  icon: g.icon,
+  color: g.color,
+  order: g.order
+});
+
+const mapTaskFromSupabase = (t: any): Task => ({
+  id: Number(t.id),
+  title: t.title,
+  description: t.description,
+  groupId: Number(t.groupId),
+  status: t.status,
+  date: new Date(t.date),
+  type: t.type as any,
+  frequency: t.frequency,
+  interval: t.interval,
+  lastCompletedDate: t.lastCompletedDate ? new Date(t.lastCompletedDate) : undefined,
+  measures: t.measures,
+  currentProgress: t.currentProgress,
+  targetProgress: t.targetProgress,
+  unit: t.unit,
+  deadline: t.deadline ? new Date(t.deadline) : undefined,
+  colorTag: t.colorTag,
+  tags: t.tags
+});
+
 export function useSync() {
   const { user } = useAuth();
   const isSyncingRef = useRef(false);
@@ -16,11 +45,10 @@ export function useSync() {
     
     isProcessingQueueRef.current = true;
     try {
-      // Pega todos os itens da fila ordenados por data
       const queueItems = await db.syncQueue.orderBy('date').toArray();
       
       if (queueItems.length > 0) {
-        console.log(`Processando ${queueItems.length} itens da fila de sincronização...`);
+        console.log(`[Sync] Processando ${queueItems.length} itens da fila...`);
       }
 
       for (const item of queueItems) {
@@ -28,14 +56,7 @@ export function useSync() {
           const tableName = item.table === 'tasks' ? 'cloud_tasks' : 'cloud_groups';
           const payload = { ...item.data, user_id: user.id };
 
-          // Formata datas para ISO string compatível com Supabase
-          if (payload.date && payload.date instanceof Date) payload.date = payload.date.toISOString();
-          else if (payload.date && typeof payload.date === 'string') payload.date = payload.date; // Já é string?
-          
-          if (payload.lastCompletedDate && payload.lastCompletedDate instanceof Date) payload.lastCompletedDate = payload.lastCompletedDate.toISOString();
-          if (payload.deadline && payload.deadline instanceof Date) payload.deadline = payload.deadline.toISOString();
-          
-          // Garante formatação correta das datas se vierem como string/number
+          // Formata datas
           if (item.table === 'tasks') {
              if (payload.date) payload.date = new Date(payload.date).toISOString();
              if (payload.lastCompletedDate) payload.lastCompletedDate = new Date(payload.lastCompletedDate).toISOString();
@@ -50,12 +71,10 @@ export function useSync() {
             if (error) throw error;
           }
 
-          // Se sucesso, remove da fila
           await db.syncQueue.delete(item.id!);
         } catch (err) {
-          console.error(`Erro ao processar item da fila ${item.id}:`, err);
-          // Interrompe o processamento para manter a consistência da ordem das operações
-          // (ex: não tentar atualizar algo que falhou ao ser criado)
+          console.error(`[Sync] Erro no item ${item.id}:`, err);
+          // Break para manter ordem cronológica em caso de erro
           break; 
         }
       }
@@ -64,89 +83,112 @@ export function useSync() {
     }
   }, [user]);
 
-  // Função para buscar dados do Supabase (Prioridade na abertura)
+  // Busca inicial (Pull)
   const syncPull = useCallback(async () => {
     if (!user || isSyncingRef.current || !navigator.onLine) return;
     
     isSyncingRef.current = true;
     try {
-      console.log('Iniciando Sync Pull do Supabase...');
+      console.log('[Sync] Iniciando Pull...');
       
-      // 1. Pull Groups
-      const { data: cloudGroups, error: groupsError } = await supabase
-        .from('cloud_groups')
-        .select('*');
+      const [groupsRes, tasksRes] = await Promise.all([
+        supabase.from('cloud_groups').select('*'),
+        supabase.from('cloud_tasks').select('*')
+      ]);
 
-      if (groupsError) throw groupsError;
+      if (groupsRes.error) throw groupsRes.error;
+      if (tasksRes.error) throw tasksRes.error;
 
-      if (cloudGroups) {
-        await db.transaction('rw', db.groups, async () => {
-           // @ts-ignore
-           Dexie.currentTransaction.source = 'sync';
-           
-           const groupsToSave = cloudGroups.map(g => ({
-             id: Number(g.id),
-             title: g.title,
-             icon: g.icon,
-             color: g.color,
-             order: g.order
-           }));
-           await db.groups.bulkPut(groupsToSave as Group[]);
-        });
-      }
-
-      // 2. Pull Tasks
-      const { data: cloudTasks, error: tasksError } = await supabase
-        .from('cloud_tasks')
-        .select('*');
-
-      if (tasksError) throw tasksError;
-
-      if (cloudTasks) {
-        await db.transaction('rw', db.tasks, async () => {
-           // @ts-ignore
-           Dexie.currentTransaction.source = 'sync';
-
-           const tasksToSave = cloudTasks.map(t => ({
-             id: Number(t.id),
-             title: t.title,
-             description: t.description,
-             groupId: Number(t.groupId),
-             status: t.status,
-             date: new Date(t.date),
-             type: t.type as any,
-             frequency: t.frequency,
-             interval: t.interval,
-             lastCompletedDate: t.lastCompletedDate ? new Date(t.lastCompletedDate) : undefined,
-             measures: t.measures,
-             currentProgress: t.currentProgress,
-             targetProgress: t.targetProgress,
-             unit: t.unit,
-             deadline: t.deadline ? new Date(t.deadline) : undefined,
-             colorTag: t.colorTag,
-             tags: t.tags
-           }));
-           await db.tasks.bulkPut(tasksToSave as Task[]);
-        });
-      }
-      console.log('Sync Pull concluído com sucesso.');
+      await db.transaction('rw', db.groups, db.tasks, async () => {
+         // @ts-ignore
+         Dexie.currentTransaction.source = 'sync';
+         
+         if (groupsRes.data) {
+           await db.groups.bulkPut(groupsRes.data.map(mapGroupFromSupabase));
+         }
+         if (tasksRes.data) {
+           await db.tasks.bulkPut(tasksRes.data.map(mapTaskFromSupabase));
+         }
+      });
+      console.log('[Sync] Pull concluído.');
 
     } catch (error) {
-      console.error('Sync Pull Error:', error);
+      console.error('[Sync] Erro no Pull:', error);
     } finally {
       isSyncingRef.current = false;
     }
   }, [user]);
 
-  // Efeito Principal: Inicialização e Monitoramento de Conexão
+  // Setup Realtime Subscription
+  useEffect(() => {
+    if (!user) return;
+
+    const channel = supabase.channel(`sync:${user.id}`)
+      .on(
+        'postgres_changes', 
+        { event: '*', schema: 'public', table: 'cloud_tasks', filter: `user_id=eq.${user.id}` }, 
+        async (payload) => {
+          console.log('[Realtime] Task change:', payload.eventType);
+          if (isSyncingRef.current) return; // Evita conflito se estiver fazendo pull inicial
+
+          await db.transaction('rw', db.tasks, async () => {
+            // @ts-ignore
+            Dexie.currentTransaction.source = 'sync';
+            
+            if (payload.eventType === 'DELETE') {
+              await db.tasks.delete(Number(payload.old.id));
+            } else {
+              await db.tasks.put(mapTaskFromSupabase(payload.new));
+            }
+          });
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'cloud_groups', filter: `user_id=eq.${user.id}` },
+        async (payload) => {
+          console.log('[Realtime] Group change:', payload.eventType);
+          if (isSyncingRef.current) return;
+
+          await db.transaction('rw', db.groups, async () => {
+            // @ts-ignore
+            Dexie.currentTransaction.source = 'sync';
+            
+            if (payload.eventType === 'DELETE') {
+              await db.groups.delete(Number(payload.old.id));
+            } else {
+              await db.groups.put(mapGroupFromSupabase(payload.new));
+            }
+          });
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [user]);
+
+  // Polling para garantir envio de pendências
+  useEffect(() => {
+    if (!user) return;
+    
+    const interval = setInterval(() => {
+      if (navigator.onLine) {
+        processSyncQueue();
+      }
+    }, 15000); // Tenta processar a fila a cada 15s se houver algo pendente
+
+    return () => clearInterval(interval);
+  }, [user, processSyncQueue]);
+
+  // Inicialização e Monitoramento Online
   useEffect(() => {
     if (!user) return;
 
     const initSync = async () => {
-      // Prioridade na abertura: Ler do sistema de login
       if (navigator.onLine) {
         await syncPull();
-        // Depois de atualizar o local com o remoto, processa pendências
         await processSyncQueue();
       }
     };
@@ -154,8 +196,7 @@ export function useSync() {
     initSync();
 
     const handleOnline = () => {
-      console.log('Conexão restabelecida. Sincronizando...');
-      // Ao voltar online: Tenta enviar pendências e depois atualiza
+      console.log('[Sync] Online detectado. Retomando sync...');
       processSyncQueue().then(() => syncPull());
     };
 
@@ -163,79 +204,59 @@ export function useSync() {
     return () => window.removeEventListener('online', handleOnline);
   }, [user, syncPull, processSyncQueue]);
 
-  // Efeito Secundário: Monitorar mudanças no DB Local
+  // Monitorar mudanças locais (Dexie Hooks)
   useEffect(() => {
     if (!user) return;
 
     const handleLocalChange = async (table: 'tasks' | 'groups', type: 'create' | 'update' | 'delete', obj: any, key: any) => {
-      // Adiciona na fila SEMPRE. A fila é a fonte da verdade das intenções do usuário.
-      // Isso permite funcionamento offline e sync robusto em instabilidade.
       try {
         await db.syncQueue.add({
           table,
           type,
-          data: type === 'delete' ? {} : obj, // Delete não precisa de data, só key
+          data: type === 'delete' ? {} : obj,
           primKey: key,
           date: Date.now()
         });
 
-        // Se estiver online, tenta processar a fila imediatamente
         if (navigator.onLine) {
+          // Pequeno delay para agrupar mudanças rápidas se necessário, ou enviar logo
           processSyncQueue();
         }
       } catch (err) {
-        console.error('Erro ao adicionar na fila de sync:', err);
+        console.error('[Sync] Erro ao enfileirar:', err);
       }
     };
 
-    // Tasks Hooks
-    const creatingTaskHook = (primKey: any, obj: any, trans: any) => {
+    const creatingHook = (table: 'tasks' | 'groups') => (primKey: any, obj: any, trans: any) => {
         if (trans.source === 'sync') return;
-        handleLocalChange('tasks', 'create', { ...obj, id: primKey }, primKey);
+        handleLocalChange(table, 'create', { ...obj, id: primKey }, primKey);
     };
-    const updatingTaskHook = (mods: any, primKey: any, obj: any, trans: any) => {
-        if (trans.source === 'sync') return;
-        const newObj = { ...obj, ...mods };
-        handleLocalChange('tasks', 'update', newObj, primKey);
-    };
-    const deletingTaskHook = (primKey: any, obj: any, trans: any) => {
-        if (trans.source === 'sync') return;
-        handleLocalChange('tasks', 'delete', obj, primKey);
-    };
-
-    // Groups Hooks
-    const creatingGroupHook = (primKey: any, obj: any, trans: any) => {
-        if (trans.source === 'sync') return;
-        handleLocalChange('groups', 'create', { ...obj, id: primKey }, primKey);
-    };
-    const updatingGroupHook = (mods: any, primKey: any, obj: any, trans: any) => {
+    const updatingHook = (table: 'tasks' | 'groups') => (mods: any, primKey: any, obj: any, trans: any) => {
         if (trans.source === 'sync') return;
         const newObj = { ...obj, ...mods };
-        handleLocalChange('groups', 'update', newObj, primKey);
+        handleLocalChange(table, 'update', newObj, primKey);
     };
-    const deletingGroupHook = (primKey: any, obj: any, trans: any) => {
+    const deletingHook = (table: 'tasks' | 'groups') => (primKey: any, obj: any, trans: any) => {
         if (trans.source === 'sync') return;
-        handleLocalChange('groups', 'delete', obj, primKey);
+        handleLocalChange(table, 'delete', obj, primKey);
     };
 
-    // Registrar Hooks
-    db.tasks.hook('creating', creatingTaskHook);
-    db.tasks.hook('updating', updatingTaskHook);
-    db.tasks.hook('deleting', deletingTaskHook);
+    db.tasks.hook('creating', creatingHook('tasks'));
+    db.tasks.hook('updating', updatingHook('tasks'));
+    db.tasks.hook('deleting', deletingHook('tasks'));
     
-    db.groups.hook('creating', creatingGroupHook);
-    db.groups.hook('updating', updatingGroupHook);
-    db.groups.hook('deleting', deletingGroupHook);
+    db.groups.hook('creating', creatingHook('groups'));
+    db.groups.hook('updating', updatingHook('groups'));
+    db.groups.hook('deleting', deletingHook('groups'));
 
     return () => {
-        // Cleanup Hooks
-        db.tasks.hook('creating').unsubscribe(creatingTaskHook);
-        db.tasks.hook('updating').unsubscribe(updatingTaskHook);
-        db.tasks.hook('deleting').unsubscribe(deletingTaskHook);
+        db.tasks.hook('creating').unsubscribe(creatingHook('tasks'));
+        db.tasks.hook('updating').unsubscribe(updatingHook('tasks'));
+        db.tasks.hook('deleting').unsubscribe(deletingHook('tasks'));
         
-        db.groups.hook('creating').unsubscribe(creatingGroupHook);
-        db.groups.hook('updating').unsubscribe(updatingGroupHook);
-        db.groups.hook('deleting').unsubscribe(deletingGroupHook);
+        db.groups.hook('creating').unsubscribe(creatingHook('groups'));
+        db.groups.hook('updating').unsubscribe(updatingHook('groups'));
+        db.groups.hook('deleting').unsubscribe(deletingHook('groups'));
     };
 
   }, [user, processSyncQueue]);
