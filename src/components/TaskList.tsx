@@ -1,9 +1,10 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import type { Task } from "../types";
 import { TaskItem } from "./TaskItem";
 import { AlertCircle, RotateCw, Flag } from "lucide-react";
 import { db } from "../db/db";
-import { Reorder } from "framer-motion";
+import { Reorder, useDragControls } from "framer-motion";
+import { cn } from "../lib/utils";
 
 interface TaskListProps {
   tasks: Task[];
@@ -12,6 +13,89 @@ interface TaskListProps {
   onDuplicate: (task: Task) => void;
   onDelete: (task: Task) => void;
 }
+
+interface SortableObjectiveItemProps {
+  task: Task;
+  onToggle: (task: Task) => void;
+  onEdit: (task: Task) => void;
+  onDuplicate: (task: Task) => void;
+  onDelete: (task: Task) => void;
+  isExpanded: boolean;
+  onToggleExpand: () => void;
+  onDragEnd: () => void;
+}
+
+const SortableObjectiveItem: React.FC<SortableObjectiveItemProps> = ({ 
+    task, onToggle, onEdit, onDuplicate, onDelete, isExpanded, onToggleExpand, onDragEnd 
+}) => {
+  const controls = useDragControls();
+  const [isPressing, setIsPressing] = useState(false);
+  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const startPosRef = useRef<{ x: number; y: number } | null>(null);
+
+  const handlePointerDown = (e: React.PointerEvent) => {
+    const target = e.target as HTMLElement;
+    // Prevent drag start on interactive elements
+    if (target.closest('button') || target.closest('input') || target.closest('a') || target.closest('[role="checkbox"]')) {
+        return;
+    }
+    
+    if (e.button !== 0) return;
+
+    startPosRef.current = { x: e.clientX, y: e.clientY };
+    setIsPressing(true);
+
+    timeoutRef.current = setTimeout(() => {
+      controls.start(e);
+      if (navigator.vibrate) navigator.vibrate(50);
+      setIsPressing(false);
+    }, 1000);
+  };
+
+  const cancelLongPress = () => {
+    if (timeoutRef.current) clearTimeout(timeoutRef.current);
+    startPosRef.current = null;
+    setIsPressing(false);
+  };
+
+  const handlePointerMove = (e: React.PointerEvent) => {
+    if (!startPosRef.current) return;
+    const dx = Math.abs(e.clientX - startPosRef.current.x);
+    const dy = Math.abs(e.clientY - startPosRef.current.y);
+
+    if (dx > 10 || dy > 10) {
+      cancelLongPress();
+    }
+  };
+
+  return (
+    <Reorder.Item 
+      value={task}
+      dragListener={false}
+      dragControls={controls}
+      onDragEnd={onDragEnd}
+      onPointerDown={handlePointerDown}
+      onPointerMove={handlePointerMove}
+      onPointerUp={cancelLongPress}
+      onPointerCancel={cancelLongPress}
+      onPointerLeave={cancelLongPress}
+      style={{ touchAction: 'manipulation' }}
+      className="relative"
+    >
+      <div className={cn("transition-transform duration-200", isPressing && "scale-[0.98] opacity-80")}>
+        <TaskItem 
+          task={task} 
+          onToggle={onToggle} 
+          onEdit={onEdit} 
+          onDuplicate={onDuplicate}
+          onDelete={onDelete}
+          isExpanded={isExpanded}
+          onToggleExpand={onToggleExpand}
+        />
+      </div>
+    </Reorder.Item>
+  );
+};
 
 const sortTasksByUrgency = (tasks: Task[], type: 'immediate' | 'recurrent' | 'objective') => {
   return [...tasks].sort((a, b) => {
@@ -136,24 +220,17 @@ export const TaskList: React.FC<TaskListProps> = ({ tasks, onToggle, onEdit, onD
             className="space-y-3"
           >
             {localObjectives.map(task => (
-              <Reorder.Item 
-                key={task.id} 
-                value={task}
+              <SortableObjectiveItem
+                key={task.id}
+                task={task}
+                onToggle={onToggle}
+                onEdit={onEdit}
+                onDuplicate={onDuplicate}
+                onDelete={onDelete}
+                isExpanded={expandedTaskId === task.id}
+                onToggleExpand={() => handleToggleExpand(task.id)}
                 onDragEnd={handleDragEnd}
-                // Removing default touch-action blocking might help with scrolling on mobile if dragged by a handle, 
-                // but here we drag the whole card, so we keep defaults or adjust if needed.
-                // Framer motion defaults are usually good.
-              >
-                  <TaskItem 
-                    task={task} 
-                    onToggle={onToggle} 
-                    onEdit={onEdit} 
-                    onDuplicate={onDuplicate}
-                    onDelete={onDelete}
-                    isExpanded={expandedTaskId === task.id}
-                    onToggleExpand={() => handleToggleExpand(task.id)}
-                  />
-              </Reorder.Item>
+              />
             ))}
           </Reorder.Group>
         </section>
