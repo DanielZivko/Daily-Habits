@@ -6,6 +6,7 @@ import { Button } from "./ui/Button";
 import { Input } from "./ui/Input";
 import { Zap, RotateCw, Flag, Plus, Trash2 } from "lucide-react";
 import { cn } from "../lib/utils";
+import { useAuth } from "../contexts/AuthContext";
 
 interface Measure {
   description: string;
@@ -15,17 +16,20 @@ interface Measure {
 
 interface TaskFormProps {
   initialTask?: Task | null;
-  initialGroupId?: number | null;
+  initialGroupId?: string | null;
   onSave: (taskData: Partial<Task>) => void;
   onCancel: () => void;
 }
 
 export const TaskForm: React.FC<TaskFormProps> = ({ initialTask, initialGroupId, onSave, onCancel }) => {
-  const groups = useLiveQuery(() => db.groups.toArray()) || [];
+  const { user } = useAuth();
+  const currentUserId = user ? user.id : 'guest';
+
+  const groups = useLiveQuery(() => db.groups.where('userId').equals(currentUserId).toArray(), [currentUserId]) || [];
   
   const [title, setTitle] = useState(initialTask?.title || "");
   const [description, setDescription] = useState(initialTask?.description || "");
-  const [groupId, setGroupId] = useState<number>(initialTask?.groupId || initialGroupId || 0);
+  const [groupId, setGroupId] = useState<string>(initialTask?.groupId || initialGroupId || "");
   const [type, setType] = useState<TaskType>(initialTask?.type || "immediate");
   
   // Recurrent fields
@@ -71,7 +75,13 @@ export const TaskForm: React.FC<TaskFormProps> = ({ initialTask, initialGroupId,
         // Reset to defaults if creating new task
         setTitle("");
         setDescription("");
-        setGroupId(initialGroupId || (groups.length > 0 ? groups[0].id : 0));
+        // If initialGroupId is provided, use it. Otherwise, if groups are loaded, use the first one.
+        if (initialGroupId) {
+            setGroupId(initialGroupId);
+        } else if (groups.length > 0 && !groupId) {
+             setGroupId(groups[0].id);
+        }
+        
         setType("immediate");
         setInterval(1);
         setFrequency("daily");
@@ -79,6 +89,14 @@ export const TaskForm: React.FC<TaskFormProps> = ({ initialTask, initialGroupId,
         setMeasures([]);
     }
   }, [initialTask, initialGroupId, groups]);
+
+  // Ensure groupId is selected if groups load later
+  useEffect(() => {
+      if (!groupId && groups.length > 0 && !initialTask) {
+          setGroupId(groups[0].id);
+      }
+  }, [groups, groupId, initialTask]);
+
 
   const addMeasure = () => {
     setMeasures([...measures, { description: "", value: "", unit: "" }]);
@@ -99,9 +117,11 @@ export const TaskForm: React.FC<TaskFormProps> = ({ initialTask, initialGroupId,
     if (!title || !groupId) return;
 
     const taskData: Partial<Task> = {
+      // If it's a new task (no initialTask), generate UUID
+      id: initialTask?.id || crypto.randomUUID(),
       title,
       description,
-      groupId: Number(groupId),
+      groupId: groupId,
       type,
       date: initialTask?.date || new Date(),
       status: initialTask?.status || false,
@@ -166,9 +186,10 @@ export const TaskForm: React.FC<TaskFormProps> = ({ initialTask, initialGroupId,
             <label className="mb-1 block text-xs font-medium text-gray-500 uppercase">Grupo</label>
             <select
               value={groupId}
-              onChange={(e) => setGroupId(Number(e.target.value))}
+              onChange={(e) => setGroupId(e.target.value)}
               className="flex h-12 w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
             >
+              <option value="" disabled>Selecione um grupo</option>
               {groups.map((g) => (
                 <option key={g.id} value={g.id}>
                    {g.title}

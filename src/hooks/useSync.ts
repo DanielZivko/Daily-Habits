@@ -5,32 +5,34 @@ import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
 import type { Group, Task } from '../types';
 
-// Mappers para converter dados do Supabase para o formato local
-const mapGroupFromSupabase = (g: any): Group => ({
-  id: Number(g.id),
+// Mappers para converter dados do Supabase (snake_case) para o formato local (camelCase)
+const mapGroupFromSupabase = (g: any, userId: string): Group => ({
+  id: g.id,
+  userId: userId,
   title: g.title,
   icon: g.icon,
   color: g.color,
   order: g.order
 });
 
-const mapTaskFromSupabase = (t: any): Task => ({
-  id: Number(t.id),
+const mapTaskFromSupabase = (t: any, userId: string): Task => ({
+  id: t.id,
+  userId: userId,
   title: t.title,
   description: t.description,
-  groupId: Number(t.groupId),
+  groupId: t.group_id, // snake_case -> camelCase
   status: t.status,
-  date: new Date(t.date),
+  date: t.date ? new Date(t.date) : new Date(),
   type: t.type as any,
   frequency: t.frequency,
   interval: t.interval,
-  lastCompletedDate: t.lastCompletedDate ? new Date(t.lastCompletedDate) : undefined,
+  lastCompletedDate: t.last_completed_date ? new Date(t.last_completed_date) : undefined,
   measures: t.measures,
-  currentProgress: t.currentProgress,
-  targetProgress: t.targetProgress,
+  currentProgress: t.current_progress, // snake_case -> camelCase
+  targetProgress: t.target_progress, // snake_case -> camelCase
   unit: t.unit,
   deadline: t.deadline ? new Date(t.deadline) : undefined,
-  colorTag: t.colorTag,
+  colorTag: t.color_tag, // snake_case -> camelCase
   tags: t.tags
 });
 
@@ -45,26 +47,64 @@ export function useSync() {
     
     isProcessingQueueRef.current = true;
     try {
-      const queueItems = await db.syncQueue.orderBy('date').toArray();
+      // Processa apenas itens do usuário logado
+      const queueItems = await db.syncQueue
+        .where('userId').equals(user.id)
+        .sortBy('date');
       
       if (queueItems.length > 0) {
-        console.log(`[Sync] Processando ${queueItems.length} itens da fila...`);
+        console.log(`[Sync] Processando ${queueItems.length} itens da fila para usuário ${user.email}...`);
       }
 
       for (const item of queueItems) {
         try {
           const tableName = item.table === 'tasks' ? 'cloud_tasks' : 'cloud_groups';
-          const payload = { ...item.data, user_id: user.id };
+          const { userId: _, ...cleanData } = item.data; 
 
-          // Formata datas
+          // Formata datas para ISO string
+          let dateFields: any = {};
           if (item.table === 'tasks') {
-             if (payload.date) payload.date = new Date(payload.date).toISOString();
-             if (payload.lastCompletedDate) payload.lastCompletedDate = new Date(payload.lastCompletedDate).toISOString();
-             if (payload.deadline) payload.deadline = new Date(payload.deadline).toISOString();
+             if (cleanData.date) dateFields.date = new Date(cleanData.date).toISOString();
+             if (cleanData.lastCompletedDate) dateFields.last_completed_date = new Date(cleanData.lastCompletedDate).toISOString();
+             if (cleanData.deadline) dateFields.deadline = new Date(cleanData.deadline).toISOString();
+          }
+
+          // Mapeamento camelCase (local) -> snake_case (Supabase)
+          let finalPayload: any = {};
+          if (tableName === 'cloud_groups') {
+              finalPayload = {
+                  user_id: user.id,
+                  id: cleanData.id,
+                  title: cleanData.title,
+                  icon: cleanData.icon,
+                  color: cleanData.color,
+                  order: cleanData.order
+              };
+          } else if (tableName === 'cloud_tasks') {
+              finalPayload = {
+                  user_id: user.id,
+                  id: cleanData.id,
+                  title: cleanData.title,
+                  description: cleanData.description,
+                  group_id: cleanData.groupId, // camelCase -> snake_case
+                  status: cleanData.status,
+                  date: dateFields.date || null,
+                  type: cleanData.type,
+                  frequency: cleanData.frequency,
+                  interval: cleanData.interval,
+                  last_completed_date: dateFields.last_completed_date || null, // camelCase -> snake_case
+                  measures: cleanData.measures,
+                  current_progress: cleanData.currentProgress, // camelCase -> snake_case
+                  target_progress: cleanData.targetProgress, // camelCase -> snake_case
+                  unit: cleanData.unit,
+                  deadline: dateFields.deadline || null,
+                  color_tag: cleanData.colorTag, // camelCase -> snake_case
+                  tags: cleanData.tags
+              };
           }
 
           if (item.type === 'create' || item.type === 'update') {
-            const { error } = await supabase.from(tableName).upsert(payload);
+            const { error } = await supabase.from(tableName).upsert(finalPayload);
             if (error) throw error;
           } else if (item.type === 'delete') {
             const { error } = await supabase.from(tableName).delete().match({ id: item.primKey, user_id: user.id });
@@ -74,7 +114,6 @@ export function useSync() {
           await db.syncQueue.delete(item.id!);
         } catch (err) {
           console.error(`[Sync] Erro no item ${item.id}:`, err);
-          // Break para manter ordem cronológica em caso de erro
           break; 
         }
       }
@@ -103,11 +142,14 @@ export function useSync() {
          // @ts-ignore
          Dexie.currentTransaction.source = 'sync';
          
+         await db.groups.where('userId').equals(user.id).delete();
+         await db.tasks.where('userId').equals(user.id).delete();
+
          if (groupsRes.data) {
-           await db.groups.bulkPut(groupsRes.data.map(mapGroupFromSupabase));
+           await db.groups.bulkPut(groupsRes.data.map(g => mapGroupFromSupabase(g, user.id)));
          }
          if (tasksRes.data) {
-           await db.tasks.bulkPut(tasksRes.data.map(mapTaskFromSupabase));
+           await db.tasks.bulkPut(tasksRes.data.map(t => mapTaskFromSupabase(t, user.id)));
          }
       });
       console.log('[Sync] Pull concluído.');
@@ -129,16 +171,16 @@ export function useSync() {
         { event: '*', schema: 'public', table: 'cloud_tasks', filter: `user_id=eq.${user.id}` }, 
         async (payload) => {
           console.log('[Realtime] Task change:', payload.eventType);
-          if (isSyncingRef.current) return; // Evita conflito se estiver fazendo pull inicial
+          if (isSyncingRef.current) return;
 
           await db.transaction('rw', db.tasks, async () => {
             // @ts-ignore
             Dexie.currentTransaction.source = 'sync';
             
             if (payload.eventType === 'DELETE') {
-              await db.tasks.delete(Number(payload.old.id));
+              await db.tasks.delete(payload.old.id);
             } else {
-              await db.tasks.put(mapTaskFromSupabase(payload.new));
+              await db.tasks.put(mapTaskFromSupabase(payload.new, user.id));
             }
           });
         }
@@ -155,9 +197,9 @@ export function useSync() {
             Dexie.currentTransaction.source = 'sync';
             
             if (payload.eventType === 'DELETE') {
-              await db.groups.delete(Number(payload.old.id));
+              await db.groups.delete(payload.old.id);
             } else {
-              await db.groups.put(mapGroupFromSupabase(payload.new));
+              await db.groups.put(mapGroupFromSupabase(payload.new, user.id));
             }
           });
         }
@@ -177,7 +219,7 @@ export function useSync() {
       if (navigator.onLine) {
         processSyncQueue();
       }
-    }, 15000); // Tenta processar a fila a cada 15s se houver algo pendente
+    }, 15000);
 
     return () => clearInterval(interval);
   }, [user, processSyncQueue]);
@@ -208,27 +250,41 @@ export function useSync() {
   useEffect(() => {
     if (!user) return;
 
-    const handleLocalChange = async (table: 'tasks' | 'groups', type: 'create' | 'update' | 'delete', obj: any, key: any) => {
-      try {
-        await db.syncQueue.add({
-          table,
-          type,
-          data: type === 'delete' ? {} : obj,
-          primKey: key,
-          date: Date.now()
-        });
+    const handleLocalChange = (table: 'tasks' | 'groups', type: 'create' | 'update' | 'delete', obj: any, key: any) => {
+      if (type !== 'delete' && obj.userId !== user.id) return;
 
-        if (navigator.onLine) {
-          // Pequeno delay para agrupar mudanças rápidas se necessário, ou enviar logo
-          processSyncQueue();
+      setTimeout(async () => {
+        try {
+          if (!db.syncQueue) {
+              console.warn('[Sync] Tabela syncQueue não encontrada. Tentando recarregar...');
+              return;
+          }
+
+          await db.syncQueue.add({
+            table,
+            type,
+            data: type === 'delete' ? {} : obj,
+            primKey: key,
+            userId: user.id,
+            date: Date.now()
+          });
+
+          if (navigator.onLine) {
+            processSyncQueue();
+          }
+        } catch (err: any) {
+          console.error('[Sync] Erro ao enfileirar:', err);
+          
+          if (err.name === 'NotFoundError') {
+              console.error('[Sync] Erro crítico de esquema detectado. Tabela syncQueue inacessível.');
+          }
         }
-      } catch (err) {
-        console.error('[Sync] Erro ao enfileirar:', err);
-      }
+      }, 0);
     };
 
     const creatingHook = (table: 'tasks' | 'groups') => (primKey: any, obj: any, trans: any) => {
         if (trans.source === 'sync') return;
+        if (!obj.userId) obj.userId = user.id; 
         handleLocalChange(table, 'create', { ...obj, id: primKey }, primKey);
     };
     const updatingHook = (table: 'tasks' | 'groups') => (mods: any, primKey: any, obj: any, trans: any) => {
@@ -261,3 +317,4 @@ export function useSync() {
 
   }, [user, processSyncQueue]);
 }
+

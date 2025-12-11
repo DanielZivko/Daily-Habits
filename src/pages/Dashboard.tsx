@@ -13,34 +13,50 @@ import { Modal } from "../components/ui/Modal";
 import { TaskForm } from "../components/TaskForm";
 import { GroupForm } from "../components/GroupForm";
 import { getIconComponent } from "../components/ui/IconPicker";
+import { useAuth } from "../contexts/AuthContext";
 
 export const Dashboard: React.FC = () => {
-  const [selectedGroupId, setSelectedGroupId] = useState<number | null>(null);
+  const { user } = useAuth();
+  const currentUserId = user ? user.id : 'guest';
+
+  const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null);
   const [isTaskModalOpen, setIsTaskModalOpen] = useState(false);
   const [isGroupModalOpen, setIsGroupModalOpen] = useState(false);
   const [editingTask, setEditingTask] = useState<Task | null>(null);
   const [copyTask, setCopyTask] = useState<Task | null>(null);
   const [editingGroup, setEditingGroup] = useState<Group | null>(null);
 
-  const groups = useLiveQuery(() => db.groups.orderBy('order').toArray());
+  const groups = useLiveQuery(
+    () => db.groups.where('userId').equals(currentUserId).sortBy('order'),
+    [currentUserId]
+  );
+  
   const tasks = useLiveQuery(
     () => {
       if (!selectedGroupId && groups && groups.length > 0) {
           // Default to first group if none selected
-          return db.tasks.where('groupId').equals(groups[0].id).toArray();
+          return db.tasks
+            .where('userId').equals(currentUserId)
+            .and(t => t.groupId === groups[0].id)
+            .toArray();
       }
       if (selectedGroupId) {
-        return db.tasks.where('groupId').equals(selectedGroupId).toArray();
+        return db.tasks
+            .where('userId').equals(currentUserId)
+            .and(t => t.groupId === selectedGroupId)
+            .toArray();
       }
       return [];
     },
-    [selectedGroupId, groups]
+    [selectedGroupId, groups, currentUserId]
   );
 
   // Set initial group selection
   React.useEffect(() => {
       if (!selectedGroupId && groups && groups.length > 0) {
           setSelectedGroupId(groups[0].id);
+      } else if (groups && groups.length === 0) {
+        setSelectedGroupId(null);
       }
   }, [groups, selectedGroupId]);
 
@@ -76,15 +92,11 @@ export const Dashboard: React.FC = () => {
         
     } else {
         // Toggle Logic for Immediate and Objective tasks
-        
         if (task.type === 'objective') {
-            // Objective logic: Save lastCompletedDate if marking as done
-            // Also supports daily reset via checkDailyReset (to be implemented/called)
-            
             const newStatus = !task.status;
             await db.tasks.update(task.id, { 
                 status: newStatus,
-                lastCompletedDate: newStatus ? new Date() : task.lastCompletedDate // Keep history if unchecking? Or update? Standard is update on completion.
+                lastCompletedDate: newStatus ? new Date() : task.lastCompletedDate
             });
         } else {
             await db.tasks.update(task.id, { status: !task.status });
@@ -115,7 +127,6 @@ export const Dashboard: React.FC = () => {
       };
       
       checkDailyReset();
-      // Optional: Set an interval to check periodically if app is left open overnight
       const interval = setInterval(checkDailyReset, 60000); // Check every minute
       return () => clearInterval(interval);
   }, [tasks]);
@@ -145,17 +156,22 @@ export const Dashboard: React.FC = () => {
   };
 
   const handleSaveTask = async (taskData: Partial<Task>) => {
-      // Check for duplicate names (case insensitive) within the same group
-      const targetGroupId = taskData.groupId || editingTask?.groupId || selectedGroupId || 0;
+      const targetGroupId = taskData.groupId || editingTask?.groupId || selectedGroupId || "";
       
+      if (!targetGroupId) {
+          alert("Erro: Nenhum grupo selecionado.");
+          return;
+      }
+
       const existingTasks = await db.tasks
         .where('groupId')
-        .equals(Number(targetGroupId))
+        .equals(targetGroupId)
+        .filter(t => t.userId === currentUserId) // Ensure we only check current user tasks
         .toArray();
 
       const isDuplicateName = existingTasks.some(t => 
         t.title.trim().toLowerCase() === (taskData.title || "").trim().toLowerCase() && 
-        t.id !== editingTask?.id // Allow saving same name if it's the same task being edited
+        t.id !== editingTask?.id
       );
 
       if (isDuplicateName) {
@@ -164,8 +180,7 @@ export const Dashboard: React.FC = () => {
       }
 
       if (editingTask) {
-          // If editing recurrence, recalculate next date based on last completion or now
-          // This ensures changing interval from 1h to 10m applies immediately
+          // Editing existing task
           let updateData = { ...taskData };
           
           if (editingTask.type === 'recurrent' && taskData.type === 'recurrent') {
@@ -173,29 +188,20 @@ export const Dashboard: React.FC = () => {
               const intervalChanged = editingTask.interval !== taskData.interval;
               
               if (frequencyChanged || intervalChanged) {
-                  // Re-calculate next due date based on last completion (or creation) + new interval
                   const baseDate = editingTask.lastCompletedDate 
                       ? new Date(editingTask.lastCompletedDate) 
-                      : new Date(); // Or date - oldInterval if strict
-                  
-                  // If never completed, reset start to now so new interval applies from now?
-                  // Or assume it started at 'date' - oldInterval?
-                  // Let's use 'lastCompletedDate' if available, otherwise reset 'date' to now + newInterval
-                  // to avoid confusion with old long intervals.
+                      : new Date();
                   
                   const interval = Number(taskData.interval) || 1;
-                  let newNextDate = new Date(); // Placeholder
+                  let newNextDate = new Date();
 
                   if (editingTask.lastCompletedDate) {
-                      // Add new interval to last completion
                       if (taskData.frequency === 'daily') newNextDate = addDays(baseDate, interval);
                       else if (taskData.frequency === 'weekly') newNextDate = addWeeks(baseDate, interval);
                       else if (taskData.frequency === 'monthly') newNextDate = addMonths(baseDate, interval);
                       else if (taskData.frequency === 'hours') newNextDate = addHours(baseDate, interval);
                       else if (taskData.frequency === 'minutes') newNextDate = addMinutes(baseDate, interval);
                   } else {
-                      // Never completed. Reset start time to NOW.
-                      // This effectively restarts the timer with the new interval.
                       const now = new Date();
                       if (taskData.frequency === 'daily') newNextDate = addDays(now, interval);
                       else if (taskData.frequency === 'weekly') newNextDate = addWeeks(now, interval);
@@ -208,18 +214,20 @@ export const Dashboard: React.FC = () => {
               }
           }
 
+          // Ensure userId is preserved or set if missing
+          if (!updateData.userId) updateData.userId = currentUserId;
+
           await db.tasks.update(editingTask.id, updateData);
       } else {
-          // Creating new task (or duplicating)
-          // If duplicating, we might want to reset some fields like status
-          
+          // Creating new task
           await db.tasks.add({
               ...taskData,
+              userId: currentUserId, // Explicitly set user context
               status: false,
-              date: new Date(), // Reset date to now for new copies? Or keep original date? Usually new tasks start fresh.
-              lastCompletedDate: undefined, // Reset completion history
+              date: new Date(),
+              lastCompletedDate: undefined,
               type: taskData.type || 'immediate',
-              groupId: taskData.groupId || selectedGroupId || 0
+              groupId: taskData.groupId || selectedGroupId || targetGroupId
           } as Task);
       }
       setIsTaskModalOpen(false);
@@ -238,13 +246,17 @@ export const Dashboard: React.FC = () => {
 
   const handleSaveGroup = async (groupData: Partial<Group>) => {
       if (editingGroup) {
-          await db.groups.update(editingGroup.id, groupData);
+          // Ensure userId is preserved
+          const updatePayload = { ...groupData };
+          if (!updatePayload.userId) updatePayload.userId = currentUserId;
+          await db.groups.update(editingGroup.id, updatePayload);
       } else {
-          const lastGroup = await db.groups.orderBy('order').last();
+          const lastGroup = await db.groups.where('userId').equals(currentUserId).sortBy('order').then(g => g[g.length-1]);
           const newOrder = (lastGroup?.order || 0) + 1;
           
           await db.groups.add({
               ...groupData,
+              userId: currentUserId, // Explicitly set user context
               order: newOrder
           } as Group);
       }
@@ -260,7 +272,9 @@ export const Dashboard: React.FC = () => {
       }
   };
 
-  if (!groups) return <div>Carregando...</div>;
+  // Se não houver grupos para o usuário atual, mostra mensagem ou loader
+  // Importante: groups pode ser vazio [] se o usuário não tiver nada, então não deve travar em "Carregando"
+  if (groups === undefined) return <div>Carregando...</div>;
 
   const SelectedGroupIcon = selectedGroup ? getIconComponent(selectedGroup.icon) : Plus;
 
@@ -269,7 +283,7 @@ export const Dashboard: React.FC = () => {
       <Header onGroupSelect={setSelectedGroupId} />
       
       <GroupTabs 
-        groups={groups} 
+        groups={groups || []} 
         selectedGroupId={selectedGroupId} 
         onSelectGroup={setSelectedGroupId}
         onNewGroup={handleCreateGroup}
@@ -290,10 +304,14 @@ export const Dashboard: React.FC = () => {
                 </button>
                 <div>
                     <h2 className="text-2xl font-bold text-gray-900">
-                    {selectedGroup?.title} - {format(new Date(), "d 'de' MMMM", { locale: ptBR })}
+                    {selectedGroup ? selectedGroup.title : 'Bem-vindo'} - {format(new Date(), "d 'de' MMMM", { locale: ptBR })}
                     </h2>
                     <p className="text-gray-500">
-                    Você tem <span className="font-medium text-blue-600">{pendingCount} tarefas pendentes</span>
+                    {selectedGroup ? (
+                        <>Você tem <span className="font-medium text-blue-600">{pendingCount} tarefas pendentes</span></>
+                    ) : (
+                        "Selecione ou crie um grupo para começar"
+                    )}
                     </p>
                 </div>
             </div>
@@ -321,13 +339,15 @@ export const Dashboard: React.FC = () => {
           </div>
         </div>
 
-        <TaskList 
-            tasks={tasks || []} 
-            onToggle={handleToggleTask}
-            onEdit={handleEditTask}
-            onDuplicate={handleDuplicateTask}
-            onDelete={handleDeleteTask}
-        />
+        {selectedGroup && (
+            <TaskList 
+                tasks={tasks || []} 
+                onToggle={handleToggleTask}
+                onEdit={handleEditTask}
+                onDuplicate={handleDuplicateTask}
+                onDelete={handleDeleteTask}
+            />
+        )}
         
       </main>
       

@@ -1,5 +1,6 @@
 export interface Group {
-  id: number;
+  id: string;
+  userId?: string;
   title: string;
   icon: string;
   color: string;
@@ -9,10 +10,11 @@ export interface Group {
 export type TaskType = 'immediate' | 'recurrent' | 'objective';
 
 export interface Task {
-  id: number;
+  id: string;
+  userId?: string;
   title: string;
   description?: string;
-  groupId: number;
+  groupId: string;
   status: boolean;
   date: Date;
   type: TaskType;

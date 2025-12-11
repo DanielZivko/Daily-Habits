@@ -7,7 +7,7 @@ import { useLiveQuery } from "dexie-react-hooks";
 import { useAuth } from "../contexts/AuthContext";
 
 interface HeaderProps {
-  onGroupSelect?: (groupId: number) => void;
+  onGroupSelect?: (groupId: string) => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({ onGroupSelect }) => {
@@ -18,11 +18,12 @@ export const Header: React.FC<HeaderProps> = ({ onGroupSelect }) => {
   const profileRef = useRef<HTMLDivElement>(null);
   
   const { user, signOut } = useAuth();
+  const currentUserId = user ? user.id : 'guest';
   const navigate = useNavigate();
 
   // Fetch all tasks and groups for search
-  const allTasks = useLiveQuery(() => db.tasks.toArray()) || [];
-  const allGroups = useLiveQuery(() => db.groups.toArray()) || [];
+  const allTasks = useLiveQuery(() => db.tasks.where('userId').equals(currentUserId).toArray(), [currentUserId]) || [];
+  const allGroups = useLiveQuery(() => db.groups.where('userId').equals(currentUserId).toArray(), [currentUserId]) || [];
 
   const filteredTasks = searchTerm.trim() 
     ? allTasks.filter(task => 
@@ -30,12 +31,12 @@ export const Header: React.FC<HeaderProps> = ({ onGroupSelect }) => {
       )
     : [];
 
-  const getGroupColor = (groupId: number) => {
+  const getGroupColor = (groupId: string) => {
     return allGroups.find(g => g.id === groupId)?.color || '#e5e7eb';
     
   };
 
-  const handleTaskClick = (groupId: number) => {
+  const handleTaskClick = (groupId: string) => {
     if (onGroupSelect) {
       onGroupSelect(groupId);
     }

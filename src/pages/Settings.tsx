@@ -5,9 +5,13 @@ import { Button } from '../components/ui/Button';
 import { Card } from '../components/ui/Card';
 import { Download, Upload, Trash2, ArrowLeft, RefreshCw, Check } from 'lucide-react';
 import { Link } from 'react-router-dom';
+import { useAuth } from '../contexts/AuthContext';
 // import { useRegisterSW } from 'virtual:pwa-register/react';
 
 export const Settings: React.FC = () => {
+    const { user } = useAuth();
+    const currentUserId = user ? user.id : 'guest';
+    
     const fileInputRef = useRef<HTMLInputElement>(null);
     const [isLoading, setIsLoading] = useState(false);
     const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
@@ -16,29 +20,16 @@ export const Settings: React.FC = () => {
     // Mock hook for build without PWA plugin
     const needRefresh = [false];
     const updateServiceWorker = (_reload?: boolean) => {};
-    /*
-    const {
-        needRefresh: [needRefresh],
-        updateServiceWorker,
-    } = useRegisterSW({
-        onRegistered(r) {
-            console.log('SW Registered: ' + r)
-        },
-        onRegisterError(error) {
-            console.log('SW registration error', error)
-        },
-    });
-    */
 
     const handleExport = async () => {
         try {
             setIsLoading(true);
-            const groups = await db.groups.toArray();
-            const tasks = await db.tasks.toArray();
+            const groups = await db.groups.where('userId').equals(currentUserId).toArray();
+            const tasks = await db.tasks.where('userId').equals(currentUserId).toArray();
             
             const data = {
                 version: 1,
-                timestamp: new Date().toISOString(),
+                date: new Date().toISOString(),
                 groups,
                 tasks
             };
@@ -47,7 +38,7 @@ export const Settings: React.FC = () => {
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.href = url;
-            a.download = `daily-habits-backup-${new Date().toISOString().split('T')[0]}.json`;
+            a.download = `daily-habits-backup-${currentUserId === 'guest' ? 'guest' : 'user'}-${new Date().toISOString().split('T')[0]}.json`;
             document.body.appendChild(a);
             a.click();
             document.body.removeChild(a);
@@ -82,10 +73,16 @@ export const Settings: React.FC = () => {
                 }
 
                 await db.transaction('rw', db.groups, db.tasks, async () => {
-                    await db.groups.clear();
-                    await db.tasks.clear();
-                    await db.groups.bulkAdd(data.groups);
-                    await db.tasks.bulkAdd(data.tasks);
+                    // Limpa dados apenas do usuário atual
+                    await db.groups.where('userId').equals(currentUserId).delete();
+                    await db.tasks.where('userId').equals(currentUserId).delete();
+                    
+                    // Prepara dados para importação, garantindo userId correto
+                    const groupsToImport = data.groups.map((g: any) => ({ ...g, userId: currentUserId }));
+                    const tasksToImport = data.tasks.map((t: any) => ({ ...t, userId: currentUserId }));
+                    
+                    await db.groups.bulkAdd(groupsToImport);
+                    await db.tasks.bulkAdd(tasksToImport);
                 });
 
                 setMessage({ type: 'success', text: 'Dados importados com sucesso!' });
@@ -103,14 +100,14 @@ export const Settings: React.FC = () => {
     };
 
     const handleClearData = async () => {
-        if (confirm('Tem certeza absoluta? Esta ação não pode ser desfeita e apagará TODOS os dados.')) {
+        if (confirm('Tem certeza absoluta? Esta ação não pode ser desfeita e apagará TODOS os seus dados.')) {
              try {
                 setIsLoading(true);
                 await db.transaction('rw', db.groups, db.tasks, async () => {
-                    await db.groups.clear();
-                    await db.tasks.clear();
+                    await db.groups.where('userId').equals(currentUserId).delete();
+                    await db.tasks.where('userId').equals(currentUserId).delete();
                 });
-                setMessage({ type: 'success', text: 'Todos os dados foram apagados.' });
+                setMessage({ type: 'success', text: 'Todos os seus dados foram apagados.' });
              } catch (error) {
                  setMessage({ type: 'error', text: 'Erro ao limpar dados.' });
              } finally {
@@ -220,7 +217,7 @@ export const Settings: React.FC = () => {
                          <Card className="p-6">
                             <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
                                 <div>
-                                    <p className="text-gray-600 font-medium">Daily Habits PWA v1.2.2</p>
+                                    <p className="text-gray-600 font-medium">Daily Habits PWA v1.3</p>
                                     <p className="text-sm text-gray-400 mt-1">Desenvolvido com React, Vite e Dexie.js</p>
                                 </div>
                                 

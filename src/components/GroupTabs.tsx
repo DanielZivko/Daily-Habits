@@ -93,8 +93,8 @@ const GroupTabItem: React.FC<GroupTabItemProps> = ({ group, isSelected, onClick,
 
 interface GroupTabsProps {
   groups: Group[];
-  selectedGroupId: number | null;
-  onSelectGroup: (id: number | null) => void;
+  selectedGroupId: string | null;
+  onSelectGroup: (id: string | null) => void;
   onNewGroup: () => void;
 }
 

@@ -104,8 +104,8 @@ const sortTasksByUrgency = (tasks: Task[], type: 'immediate' | 'recurrent' | 'ob
         const orderA = a.order !== undefined ? a.order : Infinity;
         const orderB = b.order !== undefined ? b.order : Infinity;
         if (orderA !== orderB) return orderA - orderB;
-        // Fallback to creation order (id)
-        return a.id - b.id;
+        // Fallback to creation order (id string compare)
+        return a.id.localeCompare(b.id);
     }
 
     // Helper to get comparison date based on type
@@ -122,12 +122,12 @@ const sortTasksByUrgency = (tasks: Task[], type: 'immediate' | 'recurrent' | 'ob
     if (dateA !== dateB) return dateA - dateB;
 
     // Tie-breaker: creation order (ID) or Title
-    return a.id - b.id;
+    return a.id.localeCompare(b.id);
   });
 };
 
 export const TaskList: React.FC<TaskListProps> = ({ tasks, onToggle, onEdit, onDuplicate, onDelete }) => {
-  const [expandedTaskId, setExpandedTaskId] = useState<number | null>(null);
+  const [expandedTaskId, setExpandedTaskId] = useState<string | null>(null);
   const [localObjectives, setLocalObjectives] = useState<Task[]>([]);
   
   const immediateTasks = sortTasksByUrgency(tasks.filter(t => t.type === 'immediate'), 'immediate');
@@ -138,7 +138,7 @@ export const TaskList: React.FC<TaskListProps> = ({ tasks, onToggle, onEdit, onD
     setLocalObjectives(objectives);
   }, [tasks]);
 
-  const handleToggleExpand = (taskId: number) => {
+  const handleToggleExpand = (taskId: string) => {
       setExpandedTaskId(prev => prev === taskId ? null : taskId);
   };
 

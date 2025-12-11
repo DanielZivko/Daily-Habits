@@ -21,6 +21,7 @@ export const GroupForm: React.FC<GroupFormProps> = ({ initialGroup, onSave, onCa
     if (!title) return;
 
     onSave({
+      id: initialGroup?.id || crypto.randomUUID(),
       title,
       icon,
       color,

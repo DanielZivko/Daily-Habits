@@ -77,3 +77,6 @@ create policy "Users can delete their own tasks"
   on public.cloud_tasks for delete
   using (auth.uid() = user_id);
 
+
+
+

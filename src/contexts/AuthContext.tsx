@@ -40,6 +40,9 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   }, []);
 
   const signOut = async () => {
+    // Limpa estado local imediatamente para feedback visual instantâneo
+    setSession(null);
+    setUser(null);
     await supabase.auth.signOut();
   };
 
@@ -51,4 +54,6 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 };
 
 export const useAuth = () => useContext(AuthContext);
+
+
 
