@@ -5,7 +5,7 @@ import { Button } from '../components/ui/Button';
 import { Card } from '../components/ui/Card';
 import { Download, Upload, Trash2, ArrowLeft, RefreshCw, Check } from 'lucide-react';
 import { Link } from 'react-router-dom';
-import { useRegisterSW } from 'virtual:pwa-register/react';
+// import { useRegisterSW } from 'virtual:pwa-register/react';
 
 export const Settings: React.FC = () => {
     const fileInputRef = useRef<HTMLInputElement>(null);
@@ -13,6 +13,10 @@ export const Settings: React.FC = () => {
     const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
     const [updateStatus, setUpdateStatus] = useState<'idle' | 'checking' | 'available' | 'latest'>('idle');
 
+    // Mock hook for build without PWA plugin
+    const needRefresh = [false];
+    const updateServiceWorker = (_reload?: boolean) => {};
+    /*
     const {
         needRefresh: [needRefresh],
         updateServiceWorker,
@@ -24,6 +28,7 @@ export const Settings: React.FC = () => {
             console.log('SW registration error', error)
         },
     });
+    */
 
     const handleExport = async () => {
         try {

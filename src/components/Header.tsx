@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useRef } from "react";
-import { CheckCircle2, Search, Settings } from "lucide-react";
-import { Link } from "react-router-dom";
+import { CheckCircle2, Search, Settings, LogIn, LogOut, User } from "lucide-react";
+import { Link, useNavigate } from "react-router-dom";
 import { Input } from "./ui/Input";
 import { db } from "../db/db";
 import { useLiveQuery } from "dexie-react-hooks";
+import { useAuth } from "../contexts/AuthContext";
 
 interface HeaderProps {
   onGroupSelect?: (groupId: number) => void;
@@ -12,7 +13,12 @@ interface HeaderProps {
 export const Header: React.FC<HeaderProps> = ({ onGroupSelect }) => {
   const [searchTerm, setSearchTerm] = useState("");
   const [isSearchOpen, setIsSearchOpen] = useState(false);
+  const [isProfileOpen, setIsProfileOpen] = useState(false);
   const searchRef = useRef<HTMLDivElement>(null);
+  const profileRef = useRef<HTMLDivElement>(null);
+  
+  const { user, signOut } = useAuth();
+  const navigate = useNavigate();
 
   // Fetch all tasks and groups for search
   const allTasks = useLiveQuery(() => db.tasks.toArray()) || [];
@@ -26,6 +32,7 @@ export const Header: React.FC<HeaderProps> = ({ onGroupSelect }) => {
 
   const getGroupColor = (groupId: number) => {
     return allGroups.find(g => g.id === groupId)?.color || '#e5e7eb';
+    
   };
 
   const handleTaskClick = (groupId: number) => {
@@ -36,11 +43,20 @@ export const Header: React.FC<HeaderProps> = ({ onGroupSelect }) => {
     setIsSearchOpen(false);
   };
 
-  // Close search results when clicking outside
+  const handleSignOut = async () => {
+    await signOut();
+    setIsProfileOpen(false);
+    navigate('/login');
+  };
+
+  // Close search and profile menus when clicking outside
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (searchRef.current && !searchRef.current.contains(event.target as Node)) {
         setIsSearchOpen(false);
+      }
+      if (profileRef.current && !profileRef.current.contains(event.target as Node)) {
+        setIsProfileOpen(false);
       }
     };
 
@@ -104,13 +120,42 @@ export const Header: React.FC<HeaderProps> = ({ onGroupSelect }) => {
         <Link to="/settings" className="rounded-full p-2 text-gray-500 hover:bg-gray-100">
           <Settings className="h-6 w-6" />
         </Link>
-        <div className="h-8 w-8 overflow-hidden rounded-full bg-yellow-200 ring-2 ring-white">
-          <img 
-            src="https://api.dicebear.com/7.x/avataaars/svg?seed=Felix" 
-            alt="Avatar" 
-            className="h-full w-full object-cover"
-          />
-        </div>
+        
+        {user ? (
+          <div className="relative" ref={profileRef}>
+            <button 
+              onClick={() => setIsProfileOpen(!isProfileOpen)}
+              className="h-8 w-8 overflow-hidden rounded-full bg-blue-100 ring-2 ring-white flex items-center justify-center text-blue-600 hover:ring-blue-100 transition-all"
+            >
+               {/* Use first letter of email or a generic user icon */}
+               <User className="h-5 w-5" />
+            </button>
+            
+            {isProfileOpen && (
+              <div className="absolute top-full right-0 mt-2 w-48 rounded-lg border border-gray-100 bg-white py-1 shadow-lg z-50">
+                <div className="px-4 py-2 border-b border-gray-50">
+                  <p className="text-xs text-gray-500">Logado como</p>
+                  <p className="text-sm font-medium text-gray-900 truncate">{user.email}</p>
+                </div>
+                <button 
+                  onClick={handleSignOut}
+                  className="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50 flex items-center gap-2"
+                >
+                  <LogOut className="h-4 w-4" />
+                  Sair
+                </button>
+              </div>
+            )}
+          </div>
+        ) : (
+          <Link 
+            to="/login" 
+            className="flex items-center gap-2 rounded-full bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 transition-colors"
+          >
+            <LogIn className="h-4 w-4" />
+            <span className="hidden sm:inline">Entrar / Sync</span>
+          </Link>
+        )}
       </div>
     </header>
   );
