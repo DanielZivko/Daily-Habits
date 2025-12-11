@@ -160,14 +160,14 @@ export const TaskList: React.FC<TaskListProps> = ({ tasks, onToggle, onEdit, onD
   };
 
   return (
-    <div className="space-y-8 pb-20">
+    <div className="space-y-6 pb-20"> {/* Reduced vertical space */}
       {immediateTasks.length > 0 && (
         <section>
-          <h2 className="mb-4 flex items-center gap-2 text-lg font-semibold text-gray-800">
-            <AlertCircle className="text-orange-500" size={20} />
+          <h2 className="mb-2 flex items-center gap-2 text-base font-semibold text-gray-800"> {/* Reduced mb and text size */}
+            <AlertCircle className="text-orange-500" size={18} />
             Tarefas Imediatas
           </h2>
-          <div className="space-y-3">
+          <div className="space-y-2"> {/* Reduced spacing between cards */}
             {immediateTasks.map(task => (
               <TaskItem 
                 key={task.id} 
@@ -186,11 +186,11 @@ export const TaskList: React.FC<TaskListProps> = ({ tasks, onToggle, onEdit, onD
 
       {recurrentTasks.length > 0 && (
         <section>
-          <h2 className="mb-4 flex items-center gap-2 text-lg font-semibold text-gray-800">
-            <RotateCw className="text-blue-500" size={20} />
+          <h2 className="mb-2 flex items-center gap-2 text-base font-semibold text-gray-800">
+            <RotateCw className="text-blue-500" size={18} />
             Tarefas Recorrentes
           </h2>
-          <div className="space-y-3">
+          <div className="space-y-2">
             {recurrentTasks.map(task => (
               <TaskItem 
                 key={task.id} 
@@ -209,15 +209,15 @@ export const TaskList: React.FC<TaskListProps> = ({ tasks, onToggle, onEdit, onD
 
       {localObjectives.length > 0 && (
         <section>
-          <h2 className="mb-4 flex items-center gap-2 text-lg font-semibold text-gray-800">
-            <Flag className="text-emerald-500" size={20} />
+          <h2 className="mb-2 flex items-center gap-2 text-base font-semibold text-gray-800">
+            <Flag className="text-emerald-500" size={18} />
             Objetivos Principais
           </h2>
           <Reorder.Group 
             axis="y" 
             values={localObjectives} 
             onReorder={handleReorder}
-            className="space-y-3"
+            className="space-y-2"
           >
             {localObjectives.map(task => (
               <SortableObjectiveItem

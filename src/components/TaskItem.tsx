@@ -54,25 +54,25 @@ export const TaskItem: React.FC<TaskItemProps> = ({ task, onToggle, onEdit, onDu
   }, [task]);
 
   const renderActions = () => (
-    <div className={cn("flex gap-2 transition-opacity", isHovered ? "opacity-100" : "opacity-0 md:opacity-0")}>
+    <div className={cn("flex gap-1 transition-opacity", isHovered ? "opacity-100" : "opacity-0 md:opacity-0")}>
       <button 
         onClick={(e) => { e.stopPropagation(); onEdit(task); }}
-        className="text-gray-400 hover:text-blue-500"
+        className="p-1 text-gray-400 hover:text-blue-500 rounded hover:bg-gray-100"
       >
-        <Pencil size={16} />
+        <Pencil size={14} />
       </button>
       <button 
         onClick={(e) => { e.stopPropagation(); onDuplicate(task); }}
-        className="text-gray-400 hover:text-green-500"
+        className="p-1 text-gray-400 hover:text-green-500 rounded hover:bg-gray-100"
         title="Duplicar"
       >
-        <Copy size={16} />
+        <Copy size={14} />
       </button>
       <button 
         onClick={(e) => { e.stopPropagation(); onDelete(task); }}
-        className="text-gray-400 hover:text-red-500"
+        className="p-1 text-gray-400 hover:text-red-500 rounded hover:bg-gray-100"
       >
-        <Trash2 size={16} />
+        <Trash2 size={14} />
       </button>
     </div>
   );
@@ -92,26 +92,45 @@ export const TaskItem: React.FC<TaskItemProps> = ({ task, onToggle, onEdit, onDu
       }
 
       if (progress >= 100) {
-          // Calcular tempo de atraso
-          // O vencimento (data limite) é task.date
-          // Se task.date está no futuro, não deveria estar 100% (exceto erro de lógica, mas assumimos que 100% = atrasado)
-          // Na verdade o calculo de progresso usa dueDate vs now. Se elapsed > totalDuration, é pq now > dueDate.
-          
           const dueDate = new Date(task.date);
           const diff = differenceInMilliseconds(new Date(), dueDate);
           
           // Se diff > 0, está vencido.
           if (diff > 0) {
-             return <span className="text-red-600 font-medium">Vencido há {formatDistanceToNow(dueDate, { locale: ptBR })}</span>;
+             return <span className="text-red-600 font-medium text-[10px]">Vencido há {formatDistanceToNow(dueDate, { locale: ptBR })}</span>;
           }
-          return <span className="text-red-600 font-medium">Vencido</span>;
+          return <span className="text-red-600 font-medium text-[10px]">Vencido</span>;
       }
       
       return (
-        <span>
+        <span className="text-[10px]">
             Última: {formatDistanceToNow(new Date(task.lastCompletedDate), { addSuffix: true, locale: ptBR })}
         </span>
       );
+  };
+
+  const renderMeasures = () => {
+      if (task.measures && task.measures.length > 0) {
+          return (
+              <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 w-full">
+                {task.measures.map((m, idx) => (
+                    <div key={idx} className="text-[10px] font-medium text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded border border-blue-100 inline-block">
+                         {[m.description, m.value, m.unit].filter(Boolean).join(" ")}
+                    </div>
+                ))}
+              </div>
+          );
+      } 
+      
+      if (task.measureValue || task.measureDescription) {
+         // Legacy fallback
+        return (
+            <div className="mt-1 text-[10px] font-medium text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded border border-blue-100 inline-block">
+              {[task.measureDescription, task.measureValue, task.measureUnit].filter(Boolean).join(" ")}
+            </div>
+        );
+      }
+      return null;
   };
 
   // 1. Tarefas Imediatas
@@ -120,28 +139,29 @@ export const TaskItem: React.FC<TaskItemProps> = ({ task, onToggle, onEdit, onDu
       <div 
         onClick={onToggleExpand}
         className={cn(
-          "group flex flex-col rounded-lg border border-gray-100 bg-white p-4 shadow-sm transition-all hover:shadow-md cursor-pointer",
+          "group flex flex-col rounded-lg border border-gray-100 bg-white px-3 py-2.5 shadow-sm transition-all hover:shadow-md cursor-pointer",
           task.status && "opacity-60 bg-gray-50"
         )}
         onMouseEnter={() => setIsHovered(true)}
         onMouseLeave={() => setIsHovered(false)}
       >
         <div className="flex items-center justify-between w-full">
-            <div className="flex items-center gap-4">
+            <div className="flex items-center gap-3">
             <div onClick={(e) => e.stopPropagation()}>
                 <Checkbox 
                     checked={task.status} 
                     onCheckedChange={() => onToggle(task)}
+                    className="h-4 w-4"
                 />
             </div>
             <div>
-                <h3 className={cn("font-medium text-gray-900", task.status && "line-through text-gray-500")}>
+                <h3 className={cn("font-medium text-sm text-gray-900", task.status && "line-through text-gray-500")}>
                 {task.title}
                 </h3>
-                <div className="flex flex-wrap gap-2 text-xs items-center mt-1">
+                <div className="flex flex-wrap gap-2 text-[10px] items-center mt-0.5">
                 {task.deadline && (
                     <span className={cn(
-                        "flex items-center gap-1 px-2 py-0.5 rounded font-medium border",
+                        "flex items-center gap-1 px-1.5 py-0.5 rounded font-medium border",
                         new Date(task.deadline) < new Date() && !task.status
                             ? "text-red-700 bg-red-100 border-red-200" // Vencido
                             : "text-gray-600 bg-gray-50 border-gray-200" // Normal
@@ -173,7 +193,7 @@ export const TaskItem: React.FC<TaskItemProps> = ({ task, onToggle, onEdit, onDu
             "overflow-hidden transition-all duration-300 ease-in-out",
             isExpanded ? "max-h-[2000px] opacity-100 mt-2" : "max-h-0 opacity-0"
         )}>
-             {task.description && <p className="text-sm text-gray-500 border-t border-gray-100 pt-2 whitespace-pre-wrap">{task.description}</p>}
+             {task.description && <p className="text-xs text-gray-500 border-t border-gray-100 pt-2 whitespace-pre-wrap">{task.description}</p>}
         </div>
       </div>
     );
@@ -184,59 +204,49 @@ export const TaskItem: React.FC<TaskItemProps> = ({ task, onToggle, onEdit, onDu
     return (
       <div 
         onClick={onToggleExpand}
-        className="group relative rounded-lg border border-gray-100 bg-white p-4 shadow-sm transition-all hover:shadow-md cursor-pointer"
+        className="group relative rounded-lg border border-gray-100 bg-white px-3 py-2.5 shadow-sm transition-all hover:shadow-md cursor-pointer"
         onMouseEnter={() => setIsHovered(true)}
         onMouseLeave={() => setIsHovered(false)}
       >
-        <div className="flex items-center justify-between mb-2">
-          <div className="flex items-center gap-3">
-             <div onClick={(e) => e.stopPropagation()}>
-                 <Checkbox 
-                    checked={false} // Recorrente nunca fica "checado" visualmente pois reseta, mas a ação dispara o reset
-                    onCheckedChange={() => onToggle(task)}
-                    className="h-5 w-5 rounded border-gray-300"
-                />
-             </div>
-            <div>
-              <h3 className="font-medium text-gray-900">{task.title}</h3>
-              
-              {/* Render measures array if exists */}
-              {task.measures && task.measures.length > 0 ? (
-                  <div className="mb-1 flex flex-col gap-0.5">
-                    {task.measures.map((m, idx) => (
-                        <p key={idx} className="text-xs font-medium text-blue-600">
-                             {[m.description, m.value, m.unit].filter(Boolean).join(" ")}
-                        </p>
-                    ))}
-                  </div>
-              ) : (task.measureValue || task.measureDescription) ? (
-                 // Legacy fallback
-                <p className="text-xs font-medium text-blue-600">
-                  {[task.measureDescription, task.measureValue, task.measureUnit].filter(Boolean).join(" ")}
-                </p>
-              ) : null}
+        <div className="flex flex-col w-full">
+            {/* Linha 1: Checkbox + Título + Status + Ações */}
+            <div className="flex items-center justify-between w-full">
+                <div className="flex items-center gap-3">
+                    <div onClick={(e) => e.stopPropagation()}>
+                        <Checkbox 
+                            checked={false} 
+                            onCheckedChange={() => onToggle(task)}
+                            className="h-4 w-4 rounded border-gray-300"
+                        />
+                    </div>
+                    <h3 className="font-medium text-sm text-gray-900">{task.title}</h3>
+                </div>
+                
+                <div className="flex items-center gap-3">
+                    <span className="text-[10px] text-gray-400 whitespace-nowrap">
+                    {getStatusText()}
+                    </span>
+                    {renderActions()}
+                </div>
             </div>
-          </div>
-          <div className="flex items-center gap-4">
-            <span className="text-xs text-gray-400">
-               {getStatusText()}
-            </span>
-            {renderActions()}
-          </div>
+
+            {/* Linha 2: Medições */}
+            {renderMeasures()}
         </div>
+
         <ProgressBar 
             current={progress} 
             max={100} 
-            className="h-1.5" 
+            className="h-1 mt-2" 
             colorClass={getProgressColor(progress)}
         />
         
         {/* Description Accordion */}
         <div className={cn(
             "overflow-hidden transition-all duration-300 ease-in-out",
-            isExpanded ? "max-h-[2000px] opacity-100 mt-4" : "max-h-0 opacity-0"
+            isExpanded ? "max-h-[2000px] opacity-100 mt-2" : "max-h-0 opacity-0"
         )}>
-             {task.description && <div className="text-sm text-gray-500 border-t border-gray-100 pt-2 whitespace-pre-wrap">{task.description}</div>}
+             {task.description && <div className="text-xs text-gray-500 border-t border-gray-100 pt-2 whitespace-pre-wrap">{task.description}</div>}
         </div>
       </div>
     );
@@ -255,48 +265,38 @@ export const TaskItem: React.FC<TaskItemProps> = ({ task, onToggle, onEdit, onDu
       <div 
         onClick={onToggleExpand}
         className={cn(
-          "group relative flex flex-col rounded-lg border border-gray-100 border-l-[6px] bg-white p-4 shadow-sm transition-all hover:shadow-md cursor-pointer",
+          "group relative flex flex-col rounded-lg border border-gray-100 border-l-[4px] bg-white px-3 py-2.5 shadow-sm transition-all hover:shadow-md cursor-pointer",
           borderColor
         )}
         onMouseEnter={() => setIsHovered(true)}
         onMouseLeave={() => setIsHovered(false)}
       >
-        <div className="flex items-center justify-between w-full">
-            <div className="flex items-center gap-4">
-            <div onClick={(e) => e.stopPropagation()}>
-                <Checkbox 
-                    checked={task.status} 
-                    onCheckedChange={() => onToggle(task)}
-                />
-            </div>
-            <div>
-                <h3 className="font-medium text-gray-900">{task.title}</h3>
-                
-                {/* Render measures array if exists */}
-                {task.measures && task.measures.length > 0 ? (
-                    <div className="mb-1 flex flex-col gap-0.5">
-                        {task.measures.map((m, idx) => (
-                            <p key={idx} className="text-xs font-medium text-blue-600">
-                                {[m.description, m.value, m.unit].filter(Boolean).join(" ")}
-                            </p>
-                        ))}
+        <div className="flex flex-col w-full">
+             {/* Linha 1: Checkbox + Título + Status + Ações */}
+            <div className="flex items-center justify-between w-full">
+                <div className="flex items-center gap-3">
+                    <div onClick={(e) => e.stopPropagation()}>
+                        <Checkbox 
+                            checked={task.status} 
+                            onCheckedChange={() => onToggle(task)}
+                            className="h-4 w-4"
+                        />
                     </div>
-                ) : (task.measureValue || task.measureDescription) ? (
-                    // Legacy fallback
-                    <p className="text-xs font-medium text-blue-600 mb-1">
-                    {[task.measureDescription, task.measureValue, task.measureUnit].filter(Boolean).join(" ")}
-                    </p>
-                ) : null}
-                
-                {/* Objective doesn't have deadline anymore in UI as requested */}
-                {task.lastCompletedDate && (
-                    <div className="mt-1 text-xs text-gray-400">
-                        Última: {formatDistanceToNow(new Date(task.lastCompletedDate), { addSuffix: true, locale: ptBR })}
-                    </div>
-                )}
+                    <h3 className="font-medium text-sm text-gray-900">{task.title}</h3>
+                </div>
+
+                <div className="flex items-center gap-3">
+                    {task.lastCompletedDate && (
+                        <div className="text-[10px] text-gray-400 whitespace-nowrap">
+                            Última: {formatDistanceToNow(new Date(task.lastCompletedDate), { addSuffix: true, locale: ptBR })}
+                        </div>
+                    )}
+                    {renderActions()}
+                </div>
             </div>
-            </div>
-            {renderActions()}
+
+            {/* Linha 2: Medições */}
+            {renderMeasures()}
         </div>
 
         {/* Description Accordion */}
@@ -304,7 +304,7 @@ export const TaskItem: React.FC<TaskItemProps> = ({ task, onToggle, onEdit, onDu
             "overflow-hidden transition-all duration-300 ease-in-out",
             isExpanded ? "max-h-[2000px] opacity-100 mt-2" : "max-h-0 opacity-0"
         )}>
-             {task.description && <p className="text-sm text-gray-500 border-t border-gray-100 pt-2 whitespace-pre-wrap">{task.description}</p>}
+             {task.description && <p className="text-xs text-gray-500 border-t border-gray-100 pt-2 whitespace-pre-wrap">{task.description}</p>}
         </div>
       </div>
     );

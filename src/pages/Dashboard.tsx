@@ -289,9 +289,9 @@ export const Dashboard: React.FC = () => {
         onNewGroup={handleCreateGroup}
       />
 
-      <main className="mx-auto max-w-5xl px-4 py-8 md:px-8">
+      <main className="mx-auto max-w-5xl px-4 py-4 md:px-8">
         {/* Group Header */}
-        <div className="mb-8 flex items-start justify-between">
+        <div className="mb-4 flex items-start justify-between">
           <div>
             <div className="flex items-center gap-3">
                 <button 
@@ -308,7 +308,7 @@ export const Dashboard: React.FC = () => {
                     </h2>
                     <p className="text-gray-500">
                     {selectedGroup ? (
-                        <>Você tem <span className="font-medium text-blue-600">{pendingCount} tarefas pendentes</span></>
+                        <><span className="font-medium text-blue-600">{pendingCount} tarefas pendentes</span></>
                     ) : (
                         "Selecione ou crie um grupo para começar"
                     )}
