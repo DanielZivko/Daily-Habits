@@ -142,8 +142,9 @@ export function useSync() {
          // @ts-ignore
          Dexie.currentTransaction.source = 'sync';
          
-         await db.groups.where('userId').equals(user.id).delete();
-         await db.tasks.where('userId').equals(user.id).delete();
+         // REMOVIDO: Delete agressivo que apagava dados locais pendentes
+         // await db.groups.where('userId').equals(user.id).delete();
+         // await db.tasks.where('userId').equals(user.id).delete();
 
          if (groupsRes.data) {
            await db.groups.bulkPut(groupsRes.data.map(g => mapGroupFromSupabase(g, user.id)));
@@ -317,4 +318,3 @@ export function useSync() {
 
   }, [user, processSyncQueue]);
 }
-

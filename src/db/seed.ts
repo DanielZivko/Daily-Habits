@@ -2,14 +2,13 @@ import { db } from './db';
 import { subDays, addDays } from 'date-fns';
 
 export async function seedDatabase() {
-  // Clear existing database to fix ID conflicts
-  console.log('Clearing database for fresh start...');
-  await db.groups.clear();
-  await db.tasks.clear();
-  await db.syncQueue.clear();
-
   const groupCount = await db.groups.count();
-  if (groupCount > 0) return; // Already seeded (double check)
+  if (groupCount > 0) {
+      console.log('Database already has data. Skipping seed.');
+      return; 
+  }
+
+  console.log('Seeding database with initial data...');
 
   // UUIDs for Groups
   const workGroupId = crypto.randomUUID();
