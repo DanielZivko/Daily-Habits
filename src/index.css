@@ -16,3 +16,38 @@ body {
   font-family: 'Inter', system-ui, -apple-system, sans-serif;
   @apply bg-gray-50 text-gray-900;
 }
+
+/* Animações de Glow para tarefas pendentes */
+/* Propriedade animável para controlar a intensidade do glow */
+@property --glow-intensity {
+  syntax: '<percentage>';
+  initial-value: 10%;
+  inherits: false;
+}
+
+/* Todos os níveis usam a mesma intensidade, só muda a velocidade */
+@keyframes glow-pulse {
+  0%, 100% {
+    --glow-intensity: 10%;
+    filter: drop-shadow(0 0 3px color-mix(in srgb, var(--glow-color, #3b82f6) var(--glow-intensity), transparent));
+  }
+  50% {
+    --glow-intensity: 30%;
+    filter: drop-shadow(0 0 5px color-mix(in srgb, var(--glow-color, #3b82f6) var(--glow-intensity), transparent));
+  }
+}
+
+/* 1-3 tarefas: piscando lento (3s) */
+.animate-glow-slow {
+  animation: glow-pulse 3s ease-in-out infinite;
+}
+
+/* 4-7 tarefas: piscando lento-médio (2s) */
+.animate-glow-medium {
+  animation: glow-pulse 2s ease-in-out infinite;
+}
+
+/* 8+ tarefas: piscando médio (1.2s) */
+.animate-glow-fast {
+  animation: glow-pulse 1.2s ease-in-out infinite;
+}

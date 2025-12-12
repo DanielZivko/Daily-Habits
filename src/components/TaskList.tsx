@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import type { Task } from "../types";
 import { TaskItem } from "./TaskItem";
-import { AlertCircle, RotateCw, Flag } from "lucide-react";
+import { AlertCircle, RotateCw, Flag, CheckCircle2, ChevronDown } from "lucide-react";
 import { db } from "../db/db";
 import { Reorder, useDragControls } from "framer-motion";
 import { cn } from "../lib/utils";
@@ -129,8 +129,11 @@ const sortTasksByUrgency = (tasks: Task[], type: 'immediate' | 'recurrent' | 'ob
 export const TaskList: React.FC<TaskListProps> = ({ tasks, onToggle, onEdit, onDuplicate, onDelete }) => {
   const [expandedTaskId, setExpandedTaskId] = useState<string | null>(null);
   const [localObjectives, setLocalObjectives] = useState<Task[]>([]);
+  const [isCompletedExpanded, setIsCompletedExpanded] = useState(false);
   
-  const immediateTasks = sortTasksByUrgency(tasks.filter(t => t.type === 'immediate'), 'immediate');
+  const allImmediateTasks = tasks.filter(t => t.type === 'immediate');
+  const immediateTasks = sortTasksByUrgency(allImmediateTasks.filter(t => !t.status), 'immediate');
+  const completedImmediateTasks = sortTasksByUrgency(allImmediateTasks.filter(t => t.status), 'immediate');
   const recurrentTasks = sortTasksByUrgency(tasks.filter(t => t.type === 'recurrent'), 'recurrent');
 
   useEffect(() => {
@@ -161,13 +164,13 @@ export const TaskList: React.FC<TaskListProps> = ({ tasks, onToggle, onEdit, onD
 
   return (
     <div className="space-y-6 pb-20"> {/* Reduced vertical space */}
-      {immediateTasks.length > 0 && (
+      {(immediateTasks.length > 0 || completedImmediateTasks.length > 0) && (
         <section>
-          <h2 className="mb-2 flex items-center gap-2 text-base font-semibold text-gray-800"> {/* Reduced mb and text size */}
+          <h2 className="mb-2 flex items-center gap-2 text-base font-semibold text-gray-800">
             <AlertCircle className="text-orange-500" size={18} />
             Tarefas Imediatas
           </h2>
-          <div className="space-y-2"> {/* Reduced spacing between cards */}
+          <div className="space-y-2">
             {immediateTasks.map(task => (
               <TaskItem 
                 key={task.id} 
@@ -181,6 +184,47 @@ export const TaskList: React.FC<TaskListProps> = ({ tasks, onToggle, onEdit, onD
               />
             ))}
           </div>
+
+          {/* Seção de Tarefas Concluídas - Recolhível */}
+          {completedImmediateTasks.length > 0 && (
+            <div className="mt-3">
+              <button
+                onClick={() => setIsCompletedExpanded(!isCompletedExpanded)}
+                className="flex w-full items-center gap-2 rounded-lg bg-gray-50 px-3 py-2 text-sm font-medium text-gray-600 transition-colors hover:bg-gray-100"
+              >
+                <CheckCircle2 className="text-green-500" size={16} />
+                <span>Concluídas ({completedImmediateTasks.length})</span>
+                <ChevronDown 
+                  size={16} 
+                  className={cn(
+                    "ml-auto transition-transform duration-200",
+                    isCompletedExpanded && "rotate-180"
+                  )} 
+                />
+              </button>
+              
+              <div className={cn(
+                "overflow-hidden transition-all duration-300 ease-in-out",
+                isCompletedExpanded ? "max-h-[2000px] opacity-100 mt-2" : "max-h-0 opacity-0"
+              )}>
+                <div className="space-y-2">
+                  {completedImmediateTasks.map(task => (
+                    <TaskItem 
+                      key={task.id} 
+                      task={task} 
+                      onToggle={onToggle} 
+                      onEdit={onEdit} 
+                      onDuplicate={onDuplicate}
+                      onDelete={onDelete} 
+                      isExpanded={expandedTaskId === task.id}
+                      onToggleExpand={() => handleToggleExpand(task.id)}
+                      isInCompletedList={true}
+                    />
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
         </section>
       )}
 
@@ -211,7 +255,7 @@ export const TaskList: React.FC<TaskListProps> = ({ tasks, onToggle, onEdit, onD
         <section>
           <h2 className="mb-2 flex items-center gap-2 text-base font-semibold text-gray-800">
             <Flag className="text-emerald-500" size={18} />
-            Objetivos Principais
+            Objetivos Diários
           </h2>
           <Reorder.Group 
             axis="y" 

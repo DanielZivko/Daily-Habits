@@ -6,14 +6,23 @@ import { getIconComponent } from "./ui/IconPicker";
 import { db } from "../db/db";
 import { Reorder, useDragControls } from "framer-motion";
 
+// Função para determinar o nível de glow baseado na quantidade de tarefas pendentes
+const getGlowLevel = (pendingCount: number): 'none' | 'low' | 'medium' | 'high' => {
+  if (pendingCount === 0) return 'none';
+  if (pendingCount <= 3) return 'low';      // 1-3: glow super fraco, piscando lento
+  if (pendingCount <= 7) return 'medium';   // 4-7: glow fraco, piscando lento-médio
+  return 'high';                             // 8+: glow médio-fraco, piscando médio
+};
+
 interface GroupTabItemProps {
   group: Group;
   isSelected: boolean;
   onClick: () => void;
   onDragEnd: () => void;
+  pendingCount: number;
 }
 
-const GroupTabItem: React.FC<GroupTabItemProps> = ({ group, isSelected, onClick, onDragEnd }) => {
+const GroupTabItem: React.FC<GroupTabItemProps> = ({ group, isSelected, onClick, onDragEnd, pendingCount }) => {
   const controls = useDragControls();
   const [isPressing, setIsPressing] = useState(false);
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -53,6 +62,15 @@ const GroupTabItem: React.FC<GroupTabItemProps> = ({ group, isSelected, onClick,
   };
 
   const Icon = getIconComponent(group.icon);
+  const glowLevel = getGlowLevel(pendingCount);
+  
+  // Classes de animação de glow baseadas no nível
+  const glowClasses = {
+    none: '',
+    low: 'animate-glow-slow',      // 1-3: super fraco, lento
+    medium: 'animate-glow-medium', // 4-7: fraco, lento-médio
+    high: 'animate-glow-fast'      // 8+: médio-fraco, médio
+  };
 
   return (
     <Reorder.Item
@@ -67,15 +85,20 @@ const GroupTabItem: React.FC<GroupTabItemProps> = ({ group, isSelected, onClick,
       onPointerLeave={cancelLongPress}
       onClick={onClick}
       className={cn(
-        "flex min-w-fit items-center gap-2 border-b-2 px-1 py-4 text-sm font-medium transition-colors cursor-pointer select-none touch-manipulation", 
+        "flex min-w-fit items-center gap-2 border-b-2 px-1 py-4 text-sm font-medium transition-colors cursor-pointer select-none touch-manipulation rounded-t-lg", 
         isSelected
           ? "border-current"
           : "border-transparent text-gray-500 hover:text-gray-700",
-        isPressing && "opacity-70 scale-95 duration-200"
+        isPressing && "opacity-70 scale-95 duration-200",
+        glowClasses[glowLevel]
       )}
       style={{
         color: isSelected ? group.color : undefined,
-        borderColor: isSelected ? group.color : undefined
+        borderColor: isSelected ? group.color : undefined,
+        // Aplicar glow com a cor do grupo
+        ...(glowLevel !== 'none' && {
+          '--glow-color': group.color
+        } as React.CSSProperties)
       }}
       whileDrag={{ scale: 1.05, cursor: "grabbing", zIndex: 50 }}
       title={group.title}
@@ -83,6 +106,7 @@ const GroupTabItem: React.FC<GroupTabItemProps> = ({ group, isSelected, onClick,
       <Icon 
         size={20} 
         style={{ color: group.color }}
+        className={glowClasses[glowLevel]}
       />
       <span className="hidden md:block">
         {group.title}
@@ -96,13 +120,15 @@ interface GroupTabsProps {
   selectedGroupId: string | null;
   onSelectGroup: (id: string | null) => void;
   onNewGroup: () => void;
+  pendingCountByGroup: Record<string, number>;
 }
 
 export const GroupTabs: React.FC<GroupTabsProps> = ({ 
   groups, 
   selectedGroupId, 
   onSelectGroup,
-  onNewGroup
+  onNewGroup,
+  pendingCountByGroup
 }) => {
   const [localGroups, setLocalGroups] = useState<Group[]>(groups);
 
@@ -140,6 +166,7 @@ export const GroupTabs: React.FC<GroupTabsProps> = ({
             isSelected={selectedGroupId === group.id}
             onClick={() => onSelectGroup(group.id)}
             onDragEnd={handleDragEnd}
+            pendingCount={pendingCountByGroup[group.id] || 0}
           />
         ))}
       </Reorder.Group>

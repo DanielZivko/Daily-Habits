@@ -5,8 +5,36 @@ import { Checkbox } from "./ui/Checkbox";
 import { ProgressBar } from "./ui/ProgressBar";
 import { TaskStatisticsChart } from "./TaskStatisticsChart";
 import { Pencil, Trash2, Flag, Copy } from "lucide-react";
-import { format, differenceInMilliseconds, formatDistanceToNow } from "date-fns";
+import { format, differenceInMilliseconds, formatDistanceToNow, differenceInDays } from "date-fns";
 import { ptBR } from "date-fns/locale";
+
+// Função para determinar se o card deve estar no estado compacto (encolhido)
+const shouldBeCompact = (task: Task, progress: number): boolean => {
+  // 1. Tarefas imediatas concluídas
+  if (task.type === 'immediate' && task.status) {
+    return true;
+  }
+  
+  // 2. Tarefas imediatas com prazo definido e prazo a 3+ dias de distância
+  if (task.type === 'immediate' && task.deadline && !task.status) {
+    const daysUntilDeadline = differenceInDays(new Date(task.deadline), new Date());
+    if (daysUntilDeadline >= 3) {
+      return true;
+    }
+  }
+  
+  // 3. Tarefas recorrentes com barra de 0% a 70% (exceto nunca completadas)
+  if (task.type === 'recurrent' && task.lastCompletedDate && progress <= 70) {
+    return true;
+  }
+  
+  // 4. Objetivos diários completados hoje (status = true)
+  if (task.type === 'objective' && task.status) {
+    return true;
+  }
+  
+  return false;
+};
 
 interface TaskItemProps {
   task: Task;
@@ -16,11 +44,22 @@ interface TaskItemProps {
   onDelete: (task: Task) => void;
   isExpanded: boolean;
   onToggleExpand: () => void;
+  isInCompletedList?: boolean; // Se está na lista de tarefas concluídas
 }
 
-export const TaskItem: React.FC<TaskItemProps> = ({ task, onToggle, onEdit, onDuplicate, onDelete, isExpanded, onToggleExpand }) => {
+export const TaskItem: React.FC<TaskItemProps> = ({ task, onToggle, onEdit, onDuplicate, onDelete, isExpanded, onToggleExpand, isInCompletedList = false }) => {
   const [isHovered, setIsHovered] = React.useState(false);
   const [progress, setProgress] = useState(0);
+  
+  // Determina se o card deve estar compacto (calculado após o progress ser definido)
+  // Se o card está expandido, não fica compacto para melhor visualização
+  const isCompact = !isExpanded && shouldBeCompact(task, progress);
+  
+  // Determina o tamanho do checkbox:
+  // - Cards na lista de concluídas: sm
+  // - Cards encolhidos: md
+  // - Cards normais: lg
+  const checkboxSize = isInCompletedList ? "sm" : (isCompact ? "md" : "lg");
 
   // Calcula a duração fixa do intervalo de recorrência em milissegundos
   const getRecurrenceIntervalMs = (frequency: string, interval: number): number => {
@@ -64,25 +103,25 @@ export const TaskItem: React.FC<TaskItemProps> = ({ task, onToggle, onEdit, onDu
   }, [task]);
 
   const renderActions = () => (
-    <div className={cn("flex gap-1 transition-opacity", isHovered ? "opacity-100" : "opacity-0 md:opacity-0")}>
+    <div className={cn("flex gap-0.5 transition-opacity", isHovered ? "opacity-100" : "opacity-0 md:opacity-0")}>
       <button 
         onClick={(e) => { e.stopPropagation(); onEdit(task); }}
-        className="p-1 text-gray-400 hover:text-blue-500 rounded hover:bg-gray-100"
+        className={cn("text-gray-400 hover:text-blue-500 rounded hover:bg-gray-100", isCompact ? "p-0.5" : "p-1")}
       >
-        <Pencil size={14} />
+        <Pencil size={isCompact ? 12 : 14} />
       </button>
       <button 
         onClick={(e) => { e.stopPropagation(); onDuplicate(task); }}
-        className="p-1 text-gray-400 hover:text-green-500 rounded hover:bg-gray-100"
+        className={cn("text-gray-400 hover:text-green-500 rounded hover:bg-gray-100", isCompact ? "p-0.5" : "p-1")}
         title="Duplicar"
       >
-        <Copy size={14} />
+        <Copy size={isCompact ? 12 : 14} />
       </button>
       <button 
         onClick={(e) => { e.stopPropagation(); onDelete(task); }}
-        className="p-1 text-gray-400 hover:text-red-500 rounded hover:bg-gray-100"
+        className={cn("text-gray-400 hover:text-red-500 rounded hover:bg-gray-100", isCompact ? "p-0.5" : "p-1")}
       >
-        <Trash2 size={14} />
+        <Trash2 size={isCompact ? 12 : 14} />
       </button>
     </div>
   );
@@ -107,13 +146,13 @@ export const TaskItem: React.FC<TaskItemProps> = ({ task, onToggle, onEdit, onDu
           
           // Se diff > 0, está vencido.
           if (diff > 0) {
-             return <span className="text-red-600 font-medium text-[10px]">Vencido há {formatDistanceToNow(dueDate, { locale: ptBR })}</span>;
+             return <span className={cn("text-red-600 font-medium", isCompact ? "text-[8px]" : "text-[10px]")}>Vencido há {formatDistanceToNow(dueDate, { locale: ptBR })}</span>;
           }
-          return <span className="text-red-600 font-medium text-[10px]">Vencido</span>;
+          return <span className={cn("text-red-600 font-medium", isCompact ? "text-[8px]" : "text-[10px]")}>Vencido</span>;
       }
       
       return (
-        <span className="text-[10px]">
+        <span className={isCompact ? "text-[8px]" : "text-[10px]"}>
             Última: {formatDistanceToNow(new Date(task.lastCompletedDate), { addSuffix: true, locale: ptBR })}
         </span>
       );
@@ -122,9 +161,12 @@ export const TaskItem: React.FC<TaskItemProps> = ({ task, onToggle, onEdit, onDu
   const renderMeasures = () => {
       if (task.measures && task.measures.length > 0) {
           return (
-              <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 w-full">
+              <div className={cn("flex flex-wrap gap-x-2 gap-y-0.5 w-full", isCompact ? "mt-0.5" : "mt-1")}>
                 {task.measures.map((m, idx) => (
-                    <div key={idx} className="text-[10px] font-medium text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded border border-blue-100 inline-block">
+                    <div key={idx} className={cn(
+                      "font-medium text-blue-600 bg-blue-50 rounded border border-blue-100 inline-block",
+                      isCompact ? "text-[8px] px-1 py-0" : "text-[10px] px-1.5 py-0.5"
+                    )}>
                          {[m.description, m.value, m.unit].filter(Boolean).join(" ")}
                     </div>
                 ))}
@@ -135,7 +177,10 @@ export const TaskItem: React.FC<TaskItemProps> = ({ task, onToggle, onEdit, onDu
       if (task.measureValue || task.measureDescription) {
          // Legacy fallback
         return (
-            <div className="mt-1 text-[10px] font-medium text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded border border-blue-100 inline-block">
+            <div className={cn(
+              "font-medium text-blue-600 bg-blue-50 rounded border border-blue-100 inline-block",
+              isCompact ? "mt-0.5 text-[8px] px-1 py-0" : "mt-1 text-[10px] px-1.5 py-0.5"
+            )}>
               {[task.measureDescription, task.measureValue, task.measureUnit].filter(Boolean).join(" ")}
             </div>
         );
@@ -149,34 +194,43 @@ export const TaskItem: React.FC<TaskItemProps> = ({ task, onToggle, onEdit, onDu
       <div 
         onClick={onToggleExpand}
         className={cn(
-          "group flex flex-col rounded-lg border border-gray-100 bg-white px-3 py-2.5 shadow-sm transition-all hover:shadow-md cursor-pointer",
+          "group flex flex-col rounded-lg border border-gray-100 bg-white shadow-sm transition-all hover:shadow-md cursor-pointer",
+          isCompact ? "px-2 py-1.5" : "px-3 py-2.5",
           task.status && "opacity-60 bg-gray-50"
         )}
         onMouseEnter={() => setIsHovered(true)}
         onMouseLeave={() => setIsHovered(false)}
       >
         <div className="flex items-center justify-between w-full">
-            <div className="flex items-center gap-3">
+            <div className={cn("flex items-center", isCompact ? "gap-2" : "gap-3")}>
             <div onClick={(e) => e.stopPropagation()}>
                 <Checkbox 
                     checked={task.status} 
                     onCheckedChange={() => onToggle(task)}
-                    className="h-4 w-4"
+                    checkSize={checkboxSize}
                 />
             </div>
             <div>
-                <h3 className={cn("font-medium text-sm text-gray-900", task.status && "line-through text-gray-500")}>
+                <h3 className={cn(
+                  "font-medium text-gray-900",
+                  isCompact ? "text-xs" : "text-sm",
+                  task.status && "line-through text-gray-500"
+                )}>
                 {task.title}
                 </h3>
-                <div className="flex flex-wrap gap-2 text-[10px] items-center mt-0.5">
+                <div className={cn(
+                  "flex flex-wrap gap-1.5 items-center",
+                  isCompact ? "text-[8px] mt-0" : "text-[10px] mt-0.5"
+                )}>
                 {task.deadline && (
                     <span className={cn(
-                        "flex items-center gap-1 px-1.5 py-0.5 rounded font-medium border",
+                        "flex items-center gap-0.5 rounded font-medium border",
+                        isCompact ? "px-1 py-0" : "px-1.5 py-0.5",
                         new Date(task.deadline) < new Date() && !task.status
                             ? "text-red-700 bg-red-100 border-red-200" // Vencido
                             : "text-gray-600 bg-gray-50 border-gray-200" // Normal
                     )}>
-                        <Flag size={10} />
+                        <Flag size={isCompact ? 8 : 10} />
                         {new Date(task.deadline) < new Date() && !task.status
                             ? `Vencido há ${formatDistanceToNow(new Date(task.deadline), { locale: ptBR })}`
                             : format(new Date(task.deadline), "d MMM", { locale: ptBR })
@@ -186,7 +240,8 @@ export const TaskItem: React.FC<TaskItemProps> = ({ task, onToggle, onEdit, onDu
 
                 {task.tags?.map(tag => (
                     <span key={tag} className={cn(
-                    "rounded px-1.5 py-0.5 font-medium",
+                    "rounded font-medium",
+                    isCompact ? "px-1 py-0" : "px-1.5 py-0.5",
                     tag === 'Urgente' ? "bg-red-100 text-red-600" : "bg-gray-100 text-gray-600"
                     )}>
                     {tag}
@@ -215,26 +270,29 @@ export const TaskItem: React.FC<TaskItemProps> = ({ task, onToggle, onEdit, onDu
     return (
       <div 
         onClick={onToggleExpand}
-        className="group relative rounded-lg border border-gray-100 bg-white px-3 py-2.5 shadow-sm transition-all hover:shadow-md cursor-pointer"
+        className={cn(
+          "group relative rounded-lg border border-gray-100 bg-white shadow-sm transition-all hover:shadow-md cursor-pointer",
+          isCompact ? "px-2 py-1.5" : "px-3 py-2.5"
+        )}
         onMouseEnter={() => setIsHovered(true)}
         onMouseLeave={() => setIsHovered(false)}
       >
         <div className="flex flex-col w-full">
             {/* Linha 1: Checkbox + Título + Status + Ações */}
             <div className="flex items-center justify-between w-full">
-                <div className="flex items-center gap-3">
+                <div className={cn("flex items-center", isCompact ? "gap-2" : "gap-3")}>
                     <div onClick={(e) => e.stopPropagation()}>
                         <Checkbox 
                             checked={false} 
                             onCheckedChange={() => onToggle(task)}
-                            className="h-4 w-4 rounded border-gray-300"
+                            checkSize={checkboxSize}
                         />
                     </div>
-                    <h3 className="font-medium text-sm text-gray-900">{task.title}</h3>
+                    <h3 className={cn("font-medium text-gray-900", isCompact ? "text-xs" : "text-sm")}>{task.title}</h3>
                 </div>
                 
-                <div className="flex items-center gap-3">
-                    <span className="text-[10px] text-gray-400 whitespace-nowrap">
+                <div className={cn("flex items-center", isCompact ? "gap-2" : "gap-3")}>
+                    <span className={cn("text-gray-400 whitespace-nowrap", isCompact ? "text-[8px]" : "text-[10px]")}>
                     {getStatusText()}
                     </span>
                     {renderActions()}
@@ -248,7 +306,7 @@ export const TaskItem: React.FC<TaskItemProps> = ({ task, onToggle, onEdit, onDu
         <ProgressBar 
             current={progress} 
             max={100} 
-            className="h-1 mt-2" 
+            className={cn("mt-1.5", isCompact ? "h-0.5" : "h-1")}
             colorClass={getProgressColor(progress)}
         />
         
@@ -264,7 +322,7 @@ export const TaskItem: React.FC<TaskItemProps> = ({ task, onToggle, onEdit, onDu
     );
   }
 
-  // 3. Objetivos Principais
+  // 3. Objetivos Diários
   if (task.type === 'objective') {
     const borderColor = {
       green: 'border-l-emerald-500',
@@ -277,7 +335,8 @@ export const TaskItem: React.FC<TaskItemProps> = ({ task, onToggle, onEdit, onDu
       <div 
         onClick={onToggleExpand}
         className={cn(
-          "group relative flex flex-col rounded-lg border border-gray-100 border-l-[4px] bg-white px-3 py-2.5 shadow-sm transition-all hover:shadow-md cursor-pointer",
+          "group relative flex flex-col rounded-lg border border-gray-100 bg-white shadow-sm transition-all hover:shadow-md cursor-pointer",
+          isCompact ? "px-2 py-1.5 border-l-[3px]" : "px-3 py-2.5 border-l-[4px]",
           borderColor
         )}
         onMouseEnter={() => setIsHovered(true)}
@@ -286,20 +345,20 @@ export const TaskItem: React.FC<TaskItemProps> = ({ task, onToggle, onEdit, onDu
         <div className="flex flex-col w-full">
              {/* Linha 1: Checkbox + Título + Status + Ações */}
             <div className="flex items-center justify-between w-full">
-                <div className="flex items-center gap-3">
+                <div className={cn("flex items-center", isCompact ? "gap-2" : "gap-3")}>
                     <div onClick={(e) => e.stopPropagation()}>
                         <Checkbox 
                             checked={task.status} 
                             onCheckedChange={() => onToggle(task)}
-                            className="h-4 w-4"
+                            checkSize={checkboxSize}
                         />
                     </div>
-                    <h3 className="font-medium text-sm text-gray-900">{task.title}</h3>
+                    <h3 className={cn("font-medium text-gray-900", isCompact ? "text-xs" : "text-sm")}>{task.title}</h3>
                 </div>
 
-                <div className="flex items-center gap-3">
+                <div className={cn("flex items-center", isCompact ? "gap-2" : "gap-3")}>
                     {task.lastCompletedDate && (
-                        <div className="text-[10px] text-gray-400 whitespace-nowrap">
+                        <div className={cn("text-gray-400 whitespace-nowrap", isCompact ? "text-[8px]" : "text-[10px]")}>
                             Última: {formatDistanceToNow(new Date(task.lastCompletedDate), { addSuffix: true, locale: ptBR })}
                         </div>
                     )}

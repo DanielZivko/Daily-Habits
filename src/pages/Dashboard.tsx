@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useMemo } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { db } from "../db/db";
 import type { Task, Group } from "../types";
@@ -13,6 +13,30 @@ import { TaskForm } from "../components/TaskForm";
 import { GroupForm } from "../components/GroupForm";
 import { getIconComponent } from "../components/ui/IconPicker";
 import { useAuth } from "../contexts/AuthContext";
+
+// Função para verificar se uma tarefa está "pendente" (vencida)
+// Apenas tarefas imediatas e recorrentes, nunca objetivos
+const isTaskOverdue = (task: Task): boolean => {
+  const now = new Date();
+  
+  // Ignorar objetivos
+  if (task.type === 'objective') return false;
+  
+  // Tarefas imediatas: vencida se tem deadline e já passou
+  if (task.type === 'immediate') {
+    if (task.status) return false; // Já completada
+    if (!task.deadline) return false; // Sem prazo definido
+    return new Date(task.deadline) < now;
+  }
+  
+  // Tarefas recorrentes: vencida se a data de próxima execução já passou (barra 100%)
+  if (task.type === 'recurrent') {
+    if (!task.date) return false;
+    return new Date(task.date) < now;
+  }
+  
+  return false;
+};
 
 export const Dashboard: React.FC = () => {
   const { user } = useAuth();
@@ -29,6 +53,26 @@ export const Dashboard: React.FC = () => {
     () => db.groups.where('userId').equals(currentUserId).sortBy('order'),
     [currentUserId]
   );
+
+  // Buscar TODAS as tarefas do usuário para calcular pending counts por grupo
+  const allTasks = useLiveQuery(
+    () => db.tasks.where('userId').equals(currentUserId).toArray(),
+    [currentUserId]
+  );
+
+  // Calcular contagem de tarefas pendentes (vencidas) por grupo
+  const pendingCountByGroup = useMemo(() => {
+    const countMap: Record<string, number> = {};
+    if (!allTasks) return countMap;
+    
+    allTasks.forEach(task => {
+      if (isTaskOverdue(task)) {
+        countMap[task.groupId] = (countMap[task.groupId] || 0) + 1;
+      }
+    });
+    
+    return countMap;
+  }, [allTasks]);
   
   const tasks = useLiveQuery(
     () => {
@@ -60,7 +104,8 @@ export const Dashboard: React.FC = () => {
   }, [groups, selectedGroupId]);
 
   const selectedGroup = groups?.find(g => g.id === selectedGroupId);
-  const pendingCount = tasks?.filter(t => !t.status).length || 0;
+  // Contagem de pendentes do grupo selecionado (apenas tarefas vencidas de imediatas/recorrentes)
+  const pendingCount = selectedGroupId ? (pendingCountByGroup[selectedGroupId] || 0) : 0;
 
   const handleToggleTask = async (task: Task) => {
     if (task.type === 'recurrent') {
@@ -311,6 +356,7 @@ export const Dashboard: React.FC = () => {
         selectedGroupId={selectedGroupId} 
         onSelectGroup={setSelectedGroupId}
         onNewGroup={handleCreateGroup}
+        pendingCountByGroup={pendingCountByGroup}
       />
 
       <main className="mx-auto max-w-5xl px-4 py-4 md:px-8">
@@ -375,10 +421,10 @@ export const Dashboard: React.FC = () => {
         
       </main>
       
-        {/* Floating Action Button for Mobile */}
+        {/* Floating Action Button */}
         <button 
             onClick={handleCreateTask}
-            className="fixed bottom-6 right-6 flex h-14 w-14 items-center justify-center rounded-full bg-blue-500 text-white shadow-lg transition-transform hover:scale-105 hover:bg-blue-600 active:scale-95 md:hidden"
+            className="fixed bottom-6 right-6 flex h-14 w-14 items-center justify-center rounded-full bg-blue-500 text-white shadow-lg transition-transform hover:scale-105 hover:bg-blue-600 active:scale-95"
         >
             <Plus size={24} />
         </button>

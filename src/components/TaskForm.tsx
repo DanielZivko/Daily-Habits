@@ -227,7 +227,7 @@ export const TaskForm: React.FC<TaskFormProps> = ({ initialTask, initialGroupId,
         <div className="flex gap-4 mb-6 overflow-x-auto pb-2">
           {renderTypeCard('immediate', <Zap size={20} />, "Imediata", "Para fazer agora.")}
           {renderTypeCard('recurrent', <RotateCw size={20} />, "Recorrente", "Repete em dias específicos.")}
-          {renderTypeCard('objective', <Flag size={20} />, "Objetivo", "Meta de longo prazo.")}
+          {renderTypeCard('objective', <Flag size={20} />, "Objetivo", "Repete diariamente.")}
         </div>
 
         {type === 'immediate' && (
