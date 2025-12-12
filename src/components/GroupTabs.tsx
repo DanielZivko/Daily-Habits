@@ -14,6 +14,15 @@ const getGlowLevel = (pendingCount: number): 'none' | 'low' | 'medium' | 'high' 
   return 'high';                             // 8+: glow médio-fraco, piscando médio
 };
 
+// Converte cor hex para RGB (para usar com rgba no CSS)
+const hexToRgb = (hex: string): string => {
+  const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+  if (result) {
+    return `${parseInt(result[1], 16)}, ${parseInt(result[2], 16)}, ${parseInt(result[3], 16)}`;
+  }
+  return '59, 130, 246'; // Fallback azul padrão
+};
+
 interface GroupTabItemProps {
   group: Group;
   isSelected: boolean;
@@ -85,29 +94,29 @@ const GroupTabItem: React.FC<GroupTabItemProps> = ({ group, isSelected, onClick,
       onPointerLeave={cancelLongPress}
       onClick={onClick}
       className={cn(
-        "flex min-w-fit items-center gap-2 border-b-2 px-1 py-4 text-sm font-medium transition-colors cursor-pointer select-none touch-manipulation rounded-t-lg", 
+        "flex min-w-fit items-center gap-2 border-b-2 px-1 py-4 text-sm font-medium transition-colors cursor-pointer select-none touch-manipulation rounded-t-lg relative", 
         isSelected
           ? "border-current"
           : "border-transparent text-gray-500 hover:text-gray-700",
-        isPressing && "opacity-70 scale-95 duration-200",
-        glowClasses[glowLevel]
+        isPressing && "opacity-70 scale-95 duration-200"
       )}
       style={{
         color: isSelected ? group.color : undefined,
         borderColor: isSelected ? group.color : undefined,
-        // Aplicar glow com a cor do grupo
+        // Aplicar glow com a cor do grupo (RGB para usar com rgba)
         ...(glowLevel !== 'none' && {
-          '--glow-color': group.color
+          '--glow-color-rgb': hexToRgb(group.color)
         } as React.CSSProperties)
       }}
       whileDrag={{ scale: 1.05, cursor: "grabbing", zIndex: 50 }}
       title={group.title}
     >
-      <Icon 
-        size={20} 
-        style={{ color: group.color }}
-        className={glowClasses[glowLevel]}
-      />
+      <div className={cn("relative flex items-center justify-center", glowLevel !== 'none' && "glow-container", glowClasses[glowLevel])}>
+        <Icon 
+            size={20} 
+            style={{ color: group.color }}
+        />
+      </div>
       <span className="hidden md:block">
         {group.title}
       </span>

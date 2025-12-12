@@ -18,36 +18,56 @@ body {
 }
 
 /* Animações de Glow para tarefas pendentes */
-/* Propriedade animável para controlar a intensidade do glow */
-@property --glow-intensity {
-  syntax: '<percentage>';
-  initial-value: 10%;
-  inherits: false;
-}
-
-/* Todos os níveis usam a mesma intensidade, só muda a velocidade */
-@keyframes glow-pulse {
+/* Glow pulsando "de dentro" usando pseudo-elemento */
+@keyframes glow-pulse-inner {
   0%, 100% {
-    --glow-intensity: 10%;
-    filter: drop-shadow(0 0 3px color-mix(in srgb, var(--glow-color, #3b82f6) var(--glow-intensity), transparent));
+    transform: translate(-50%, -50%) scale(0.6);
+    opacity: 0.3;
   }
   50% {
-    --glow-intensity: 30%;
-    filter: drop-shadow(0 0 5px color-mix(in srgb, var(--glow-color, #3b82f6) var(--glow-intensity), transparent));
+    transform: translate(-50%, -50%) scale(1.4);
+    opacity: 0.8;
   }
+}
+
+.glow-container {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.glow-container::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 140%; /* Um pouco maior que o ícone */
+  height: 140%;
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(var(--glow-color-rgb, 59, 130, 246), 0.6) 0%, transparent 70%);
+  z-index: 0; /* Mesmo nível */
+  pointer-events: none;
+}
+
+/* Garante que o ícone fique na frente */
+.glow-container > svg {
+  position: relative;
+  z-index: 1;
 }
 
 /* 1-3 tarefas: piscando lento (3s) */
-.animate-glow-slow {
-  animation: glow-pulse 3s ease-in-out infinite;
+.animate-glow-slow::before {
+  animation: glow-pulse-inner 3s ease-in-out infinite;
 }
 
 /* 4-7 tarefas: piscando lento-médio (2s) */
-.animate-glow-medium {
-  animation: glow-pulse 2s ease-in-out infinite;
+.animate-glow-medium::before {
+  animation: glow-pulse-inner 2s ease-in-out infinite;
 }
 
 /* 8+ tarefas: piscando médio (1.2s) */
-.animate-glow-fast {
-  animation: glow-pulse 1.2s ease-in-out infinite;
+.animate-glow-fast::before {
+  animation: glow-pulse-inner 1.2s ease-in-out infinite;
 }
