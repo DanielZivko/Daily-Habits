@@ -97,6 +97,18 @@ const SortableObjectiveItem: React.FC<SortableObjectiveItemProps> = ({
   );
 };
 
+// Calcula a duração do intervalo de recorrência em milissegundos
+const getRecurrenceIntervalMs = (frequency: string, interval: number): number => {
+  switch (frequency) {
+    case 'minutes': return interval * 60 * 1000;
+    case 'hours': return interval * 60 * 60 * 1000;
+    case 'daily': return interval * 24 * 60 * 60 * 1000;
+    case 'weekly': return interval * 7 * 24 * 60 * 60 * 1000;
+    case 'monthly': return interval * 30 * 24 * 60 * 60 * 1000; // aproximado
+    default: return interval * 24 * 60 * 60 * 1000;
+  }
+};
+
 const sortTasksByUrgency = (tasks: Task[], type: 'immediate' | 'recurrent' | 'objective') => {
   return [...tasks].sort((a, b) => {
     // For objectives, use manual order
@@ -108,11 +120,39 @@ const sortTasksByUrgency = (tasks: Task[], type: 'immediate' | 'recurrent' | 'ob
         return a.id.localeCompare(b.id);
     }
 
-    // Helper to get comparison date based on type
+    // Para tarefas recorrentes: ordenar por TEMPO RESTANTE NOMINAL (quanto falta para a barra encher)
+    if (type === 'recurrent') {
+      const getTimeToFill = (task: Task): number => {
+        const now = Date.now();
+        
+        // Se nunca foi completada, a barra está em 0% - tempo para encher é o intervalo completo
+        if (!task.lastCompletedDate) {
+          return getRecurrenceIntervalMs(task.frequency || 'daily', task.interval || 1);
+        }
+        
+        // Tem lastCompletedDate - calcular tempo restante até próxima execução
+        // Isso é: (lastCompletedDate + intervalo) - now
+        const lastCompleted = new Date(task.lastCompletedDate).getTime();
+        const intervalMs = getRecurrenceIntervalMs(task.frequency || 'daily', task.interval || 1);
+        const nextDueDate = lastCompleted + intervalMs;
+        
+        return nextDueDate - now;
+      };
+
+      const timeA = getTimeToFill(a);
+      const timeB = getTimeToFill(b);
+
+      // Ordenar por tempo restante (menor = mais urgente = primeiro)
+      // Valores negativos significam tarefa vencida (mais urgente ainda)
+      if (timeA !== timeB) return timeA - timeB;
+
+      // Tie-breaker: título alfabético
+      return a.title.localeCompare(b.title);
+    }
+
+    // Para tarefas imediatas: ordenar por deadline
     const getDate = (task: Task) => {
-      if (type === 'recurrent') return task.date ? new Date(task.date).getTime() : Infinity;
-      // For immediate, prioritize deadline
-      if (type === 'immediate' && task.deadline) return new Date(task.deadline).getTime();
+      if (task.deadline) return new Date(task.deadline).getTime();
       return Infinity; // No deadline -> last priority
     };
 
