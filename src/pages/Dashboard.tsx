@@ -13,6 +13,7 @@ import { TaskForm } from "../components/TaskForm";
 import { GroupForm } from "../components/GroupForm";
 import { getIconComponent } from "../components/ui/IconPicker";
 import { useAuth } from "../contexts/AuthContext";
+import { MeasurementInputModal } from "../components/MeasurementInputModal";
 
 // Função para verificar se uma tarefa está "pendente" (vencida)
 // Apenas tarefas imediatas e recorrentes, nunca objetivos
@@ -48,6 +49,10 @@ export const Dashboard: React.FC = () => {
   const [editingTask, setEditingTask] = useState<Task | null>(null);
   const [copyTask, setCopyTask] = useState<Task | null>(null);
   const [editingGroup, setEditingGroup] = useState<Group | null>(null);
+
+  // Estados para modal de medição
+  const [completingTask, setCompletingTask] = useState<Task | null>(null);
+  const [isMeasurementModalOpen, setIsMeasurementModalOpen] = useState(false);
 
   const groups = useLiveQuery(
     () => db.groups.where('userId').equals(currentUserId).sortBy('order'),
@@ -107,7 +112,7 @@ export const Dashboard: React.FC = () => {
   // Contagem de pendentes do grupo selecionado (apenas tarefas vencidas de imediatas/recorrentes)
   const pendingCount = selectedGroupId ? (pendingCountByGroup[selectedGroupId] || 0) : 0;
 
-  const handleToggleTask = async (task: Task) => {
+  const performTaskCompletion = async (task: Task, measurements: Record<string, number> = {}) => {
     if (task.type === 'recurrent') {
         const currentDueDate = new Date(task.date);
         const interval = task.interval || 1;
@@ -141,8 +146,20 @@ export const Dashboard: React.FC = () => {
                 userId: currentUserId,
                 taskId: task.id,
                 date: new Date(),
-                value: 1
+                value: 1,
+                measurements // Salva medições
             });
+
+            // Atualiza os valores da medição na definição da tarefa
+            if (Object.keys(measurements).length > 0 && task.measures) {
+                const updatedMeasures = task.measures.map(m => {
+                    if (m.description && measurements[m.description] !== undefined) {
+                        return { ...m, value: String(measurements[m.description]) };
+                    }
+                    return m;
+                });
+                await db.tasks.update(task.id, { measures: updatedMeasures });
+            }
         });
         
     } else {
@@ -165,11 +182,47 @@ export const Dashboard: React.FC = () => {
                     userId: currentUserId,
                     taskId: task.id,
                     date: new Date(),
-                    value: 1
+                    value: 1,
+                    measurements // Salva medições
                 });
+
+                // Atualiza os valores da medição na definição da tarefa
+                if (Object.keys(measurements).length > 0 && task.measures) {
+                    const updatedMeasures = task.measures.map(m => {
+                        if (m.description && measurements[m.description] !== undefined) {
+                            return { ...m, value: String(measurements[m.description]) };
+                        }
+                        return m;
+                    });
+                    await db.tasks.update(task.id, { measures: updatedMeasures });
+                }
             }
         });
     }
+  };
+
+  const handleToggleTask = async (task: Task) => {
+    const hasMeasures = task.measures && task.measures.length > 0;
+    
+    // Check if we are completing the task
+    const isCompleting = task.type === 'recurrent' || !task.status;
+
+    // If completing and has measures, open modal first
+    if (isCompleting && hasMeasures) {
+        setCompletingTask(task);
+        setIsMeasurementModalOpen(true);
+        return;
+    }
+
+    // Otherwise standard completion (no measures recorded)
+    await performTaskCompletion(task, {});
+  };
+
+  const handleConfirmMeasurement = async (measurements: Record<string, number>) => {
+      if (completingTask) {
+          await performTaskCompletion(completingTask, measurements);
+          setCompletingTask(null);
+      }
   };
 
   // Effect to handle daily reset for objectives
@@ -455,6 +508,16 @@ export const Dashboard: React.FC = () => {
                 onCancel={() => setIsGroupModalOpen(false)}
             />
         </Modal>
+
+        <MeasurementInputModal
+            isOpen={isMeasurementModalOpen}
+            onClose={() => {
+                setIsMeasurementModalOpen(false);
+                setCompletingTask(null);
+            }}
+            task={completingTask}
+            onConfirm={handleConfirmMeasurement}
+        />
     </div>
   );
 };

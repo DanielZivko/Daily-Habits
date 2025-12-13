@@ -13,6 +13,7 @@ export interface TaskHistory {
   taskId: string;
   date: Date;
   value?: number; // Para tarefas com contagem (opcional, default 1)
+  measurements?: Record<string, number>; // Valores das medições específicas
 }
 
 export type TaskType = 'immediate' | 'recurrent' | 'objective';
@@ -37,6 +38,7 @@ export interface Task {
     description?: string;
     value?: string;
     unit?: string;
+    target?: string; // Meta (opcional)
   }[];
 
   // Legacy/Seeding fields (Optional to prevent build errors)

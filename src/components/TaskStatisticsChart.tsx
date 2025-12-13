@@ -8,10 +8,12 @@ import {
   YAxis,
   Tooltip,
   ResponsiveContainer,
+  ReferenceLine,
 } from 'recharts';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { Plus, Minus } from 'lucide-react';
+import { cn } from '../lib/utils';
 
 interface TaskStatisticsChartProps {
   taskId: string;
@@ -114,12 +116,32 @@ function formatTooltipLabel(start: Date, end: Date, intervalMs: number): string 
 
 export const TaskStatisticsChart: React.FC<TaskStatisticsChartProps> = ({ taskId, enabled = true }) => {
   const [zoomLevel, setZoomLevel] = useState(0); // 0 = full view, 100 = most zoomed
+  const [selectedMeasureDesc, setSelectedMeasureDesc] = useState<string | null>(null);
+
+  // Busca tarefa para saber as medições
+  const task = useLiveQuery(() => db.tasks.get(taskId), [taskId]);
 
   // Busca histórico da tarefa
   const history = useLiveQuery(
     () => enabled ? db.taskHistory.where('taskId').equals(taskId).sortBy('date') : [],
     [taskId, enabled]
   );
+
+  // Filtra medições disponíveis (agora todas, não apenas as com meta)
+  const availableMeasures = useMemo(() => {
+      if (!task || !task.measures) return [];
+      // Retorna todas as medições que possuem descrição
+      return task.measures.filter(m => m.description);
+  }, [task]);
+
+  // Obtém o valor da meta atual se selecionada
+  const currentTargetValue = useMemo(() => {
+      if (!selectedMeasureDesc || !availableMeasures) return null;
+      const measure = availableMeasures.find(m => m.description === selectedMeasureDesc);
+      if (!measure || !measure.target) return null;
+      // Parse target (allow comma)
+      return parseFloat(measure.target.replace(',', '.'));
+  }, [selectedMeasureDesc, availableMeasures]);
 
   // Calcula o intervalo de tempo visível baseado no zoom
   const timeRange = useMemo(() => {
@@ -151,7 +173,7 @@ export const TaskStatisticsChart: React.FC<TaskStatisticsChartProps> = ({ taskId
     };
   }, [history, zoomLevel]);
 
-  // Agrupa os dados dinamicamente baseado no intervalo visível
+  // Agrupa os dados dinamicamente baseado no intervalo visível e medição selecionada
   const { chartData, intervalInfo } = useMemo(() => {
     if (!history || history.length === 0 || !timeRange) {
       return { chartData: [], intervalInfo: null };
@@ -179,11 +201,32 @@ export const TaskStatisticsChart: React.FC<TaskStatisticsChartProps> = ({ taskId
       const entryTime = new Date(entry.date).getTime();
       const bucketStart = Math.floor(entryTime / interval.ms) * interval.ms;
       
+      let valueToAdd = 0;
+      if (selectedMeasureDesc) {
+          // Se estamos vendo uma medição específica
+          if (entry.measurements && entry.measurements[selectedMeasureDesc] !== undefined) {
+              valueToAdd = entry.measurements[selectedMeasureDesc];
+          }
+      } else {
+          // Frequência padrão
+          valueToAdd = entry.value ?? 1;
+      }
+
       if (buckets.has(bucketStart)) {
-        buckets.get(bucketStart)!.count += entry.value ?? 1;
+        if (selectedMeasureDesc) {
+            // Para medições, queremos o ÚLTIMO valor registrado no período
+            // Como estamos iterando em ordem cronológica (sortBy date),
+            // basta sobrescrever o valor anterior se o novo valor for > 0 (ou válido)
+            if (valueToAdd > 0 || buckets.get(bucketStart)!.count === 0) {
+                 buckets.get(bucketStart)!.count = valueToAdd;
+            }
+        } else {
+            // Para frequência, somamos as ocorrências
+            buckets.get(bucketStart)!.count += valueToAdd;
+        }
       } else {
         buckets.set(bucketStart, {
-          count: entry.value ?? 1,
+          count: valueToAdd,
           periodStart: new Date(bucketStart),
           periodEnd: new Date(bucketStart + interval.ms),
         });
@@ -202,26 +245,27 @@ export const TaskStatisticsChart: React.FC<TaskStatisticsChartProps> = ({ taskId
       }));
 
     return { chartData: data, intervalInfo: interval };
-  }, [history, timeRange]);
+  }, [history, timeRange, selectedMeasureDesc]);
 
   // Custom ticks para Y axis
   const yAxisTicks = useMemo(() => {
     if (chartData.length === 0) return [1];
     
-    const maxCount = Math.max(...chartData.map(d => d.count));
+    const maxVal = Math.max(...chartData.map(d => d.count));
+    const targetVal = currentTargetValue || 0;
+    const globalMax = Math.max(maxVal, targetVal); // Ensure target is visible
+
+    // Se a medição for decimal, não queremos ticks inteiros forçados
+    const isDecimal = selectedMeasureDesc !== null;
     
-    if (maxCount <= 5) {
-      return Array.from({ length: maxCount + 1 }, (_, i) => i).filter(n => n > 0);
+    if (!isDecimal) {
+        if (globalMax <= 5) {
+            return Array.from({ length: Math.ceil(globalMax) + 1 }, (_, i) => i).filter(n => n > 0);
+        }
     }
     
-    const step = Math.ceil(maxCount / 5);
-    const ticks: number[] = [1];
-    for (let i = step; i <= maxCount; i += step) {
-      ticks.push(i);
-    }
-    if (!ticks.includes(maxCount)) ticks.push(maxCount);
-    return ticks;
-  }, [chartData]);
+    return undefined; // Let recharts handle auto ticks
+  }, [chartData, selectedMeasureDesc, currentTargetValue]);
 
   const handleZoomIn = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -255,125 +299,190 @@ export const TaskStatisticsChart: React.FC<TaskStatisticsChartProps> = ({ taskId
 
   return (
     <div 
-      className="relative flex mt-3 pt-3 border-t border-gray-100"
+      className="relative flex flex-col mt-3 pt-3 border-t border-gray-100"
       onClick={(e) => e.stopPropagation()}
     >
-      {/* Gráfico */}
-      <div className="flex-1 h-48">
-        <ResponsiveContainer width="100%" height="100%">
-          <AreaChart
-            data={chartData}
-            margin={{ top: 10, right: 10, left: 0, bottom: 10 }}
-          >
-            <defs>
-              <linearGradient id={`gradient-${taskId}`} x1="0" y1="0" x2="0" y2="1">
-                <stop offset="5%" stopColor="#9CA3AF" stopOpacity={0.3} />
-                <stop offset="95%" stopColor="#9CA3AF" stopOpacity={0.05} />
-              </linearGradient>
-            </defs>
-            
-            <XAxis
-              dataKey="label"
-              axisLine={false}
-              tickLine={false}
-              tick={{ fontSize: 9, fill: '#9CA3AF' }}
-              interval="preserveStartEnd"
-            />
-            
-            <YAxis
-              axisLine={false}
-              tickLine={false}
-              tick={{ fontSize: 10, fill: '#9CA3AF' }}
-              ticks={yAxisTicks}
-              domain={[0, 'auto']}
-              width={30}
-              allowDecimals={false}
-            />
-            
-            <Tooltip
-              contentStyle={{
-                backgroundColor: 'white',
-                border: '1px solid #E5E7EB',
-                borderRadius: '8px',
-                boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
-                fontSize: '12px',
-              }}
-              formatter={(value: number) => [`${value} ${value === 1 ? 'vez' : 'vezes'}`, 'Completado']}
-              labelFormatter={(_, payload) => {
-                if (payload && payload[0] && intervalInfo) {
-                  const item = payload[0].payload as ChartDataPoint;
-                  return formatTooltipLabel(item.periodStart, item.periodEnd, intervalInfo.ms);
-                }
-                return '';
-              }}
-            />
-            
-            <Area
-              type="monotone"
-              dataKey="count"
-              stroke="#9CA3AF"
-              strokeWidth={2}
-              fill={`url(#gradient-${taskId})`}
-              dot={{
-                r: 4,
-                fill: '#9CA3AF',
-                stroke: 'white',
-                strokeWidth: 2,
-              }}
-              activeDot={{
-                r: 6,
-                fill: '#6B7280',
-                stroke: 'white',
-                strokeWidth: 2,
-              }}
-            />
-          </AreaChart>
-        </ResponsiveContainer>
-      </div>
+      {/* Tabs de Seleção de Medição */}
+      {availableMeasures.length > 0 && (
+          <div className="flex gap-2 mb-4 overflow-x-auto pb-1 px-1">
+              <button
+                  onClick={() => setSelectedMeasureDesc(null)}
+                  className={cn(
+                      "px-3 py-1 text-[10px] font-medium rounded-full transition-colors whitespace-nowrap",
+                      selectedMeasureDesc === null
+                          ? "bg-blue-100 text-blue-700"
+                          : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+                  )}
+              >
+                  Frequência
+              </button>
+              {availableMeasures.map((m, idx) => (
+                  <button
+                      key={idx}
+                      onClick={() => setSelectedMeasureDesc(m.description ?? null)}
+                      className={cn(
+                          "px-3 py-1 text-[10px] font-medium rounded-full transition-colors whitespace-nowrap",
+                          selectedMeasureDesc === m.description
+                              ? "bg-blue-100 text-blue-700"
+                              : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+                      )}
+                  >
+                      {m.description}
+                  </button>
+              ))}
+          </div>
+      )}
 
-      {/* Controle de Zoom Vertical */}
-      <div className="flex flex-col items-center justify-center gap-1 ml-2 w-6">
-        <button
-          onClick={handleZoomIn}
-          disabled={zoomLevel >= 100}
-          className="p-1 rounded-full hover:bg-gray-100 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-          title="Zoom In (dados recentes)"
-        >
-          <Plus size={14} className="text-gray-500" />
-        </button>
-        
-        {/* Slider vertical */}
-        <div 
-          className="relative h-24 w-1 bg-gray-200 rounded-full"
-          onClick={handleSliderClick}
-        >
-          <div
-            className="absolute bottom-0 w-full bg-gray-400 rounded-full transition-all duration-200"
-            style={{ height: `${100 - zoomLevel}%` }}
-          />
-          <input
-            type="range"
-            min="0"
-            max="100"
-            value={zoomLevel}
-            onChange={handleSliderChange}
-            onClick={handleSliderClick}
-            className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-            style={{ 
-              writingMode: 'vertical-lr',
-              direction: 'rtl',
-            }}
-          />
+      <div className="flex">
+        {/* Gráfico */}
+        <div className="flex-1 h-48">
+            <ResponsiveContainer width="100%" height="100%">
+            <AreaChart
+                data={chartData}
+                margin={{ top: 10, right: 10, left: 0, bottom: 10 }}
+            >
+                <defs>
+                <linearGradient id={`gradient-${taskId}`} x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#9CA3AF" stopOpacity={0.3} />
+                    <stop offset="95%" stopColor="#9CA3AF" stopOpacity={0.05} />
+                </linearGradient>
+                </defs>
+                
+                <XAxis
+                dataKey="label"
+                axisLine={false}
+                tickLine={false}
+                tick={{ fontSize: 9, fill: '#9CA3AF' }}
+                interval="preserveStartEnd"
+                />
+                
+                <YAxis
+                axisLine={false}
+                tickLine={false}
+                tick={{ fontSize: 10, fill: '#9CA3AF' }}
+                ticks={yAxisTicks}
+                tickFormatter={(value) => {
+                    // Formata para evitar muitas casas decimais (máximo 1) e usa vírgula
+                    return Number(value).toLocaleString('pt-BR', { maximumFractionDigits: 1 });
+                }}
+                domain={[0, (dataMax: number) => {
+                    const target = currentTargetValue || 0;
+                    // Se não houver dados ou meta, deixa auto
+                    if (dataMax === 0 && target === 0) return 'auto';
+                    // Garante que o domínio inclua a meta com um pequeno respiro
+                    return Math.max(dataMax, target) * 1.1;
+                }]}
+                width={30}
+                allowDecimals={selectedMeasureDesc !== null}
+                />
+                
+                <Tooltip
+                contentStyle={{
+                    backgroundColor: 'white',
+                    border: '1px solid #E5E7EB',
+                    borderRadius: '8px',
+                    boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
+                    fontSize: '12px',
+                }}
+                formatter={(value: number) => {
+                    if (selectedMeasureDesc) {
+                        return [`${Number(value).toLocaleString('pt-BR', { maximumFractionDigits: 2 })}`, selectedMeasureDesc];
+                    }
+                    return [`${value} ${value === 1 ? 'vez' : 'vezes'}`, 'Completado'];
+                }}
+                labelFormatter={(_, payload) => {
+                    if (payload && payload[0] && intervalInfo) {
+                    const item = payload[0].payload as ChartDataPoint;
+                    return formatTooltipLabel(item.periodStart, item.periodEnd, intervalInfo.ms);
+                    }
+                    return '';
+                }}
+                />
+                
+                <Area
+                type="monotone"
+                dataKey="count"
+                stroke="#9CA3AF"
+                strokeWidth={2}
+                fill={`url(#gradient-${taskId})`}
+                dot={{
+                    r: 4,
+                    fill: '#9CA3AF',
+                    stroke: 'white',
+                    strokeWidth: 2,
+                }}
+                activeDot={{
+                    r: 6,
+                    fill: '#6B7280',
+                    stroke: 'white',
+                    strokeWidth: 2,
+                }}
+                />
+
+                {/* Linha de Meta */}
+                {currentTargetValue !== null && (
+                    <ReferenceLine 
+                        y={currentTargetValue} 
+                        stroke="#10B981" 
+                        strokeDasharray="3 3" 
+                        label={{ 
+                            position: 'center', 
+                            value: `Meta: ${Number(currentTargetValue).toLocaleString('pt-BR')}`, 
+                            fill: '#10B981', 
+                            fontSize: 11,
+                            fontWeight: 500,
+                            dy: -10
+                        }} 
+                    />
+                )}
+            </AreaChart>
+            </ResponsiveContainer>
         </div>
-        
-        <button
-          onClick={handleZoomOut}
-          disabled={zoomLevel <= 0}
-          className="p-1 rounded-full hover:bg-gray-100 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-          title="Zoom Out (todos os dados)"
-        >
-          <Minus size={14} className="text-gray-500" />
-        </button>
+
+        {/* Controle de Zoom Vertical */}
+        <div className="flex flex-col items-center justify-center gap-1 ml-2 w-6">
+            <button
+            onClick={handleZoomIn}
+            disabled={zoomLevel >= 100}
+            className="p-1 rounded-full hover:bg-gray-100 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+            title="Zoom In (dados recentes)"
+            >
+            <Plus size={14} className="text-gray-500" />
+            </button>
+            
+            {/* Slider vertical */}
+            <div 
+            className="relative h-24 w-1 bg-gray-200 rounded-full"
+            onClick={handleSliderClick}
+            >
+            <div
+                className="absolute bottom-0 w-full bg-gray-400 rounded-full transition-all duration-200"
+                style={{ height: `${100 - zoomLevel}%` }}
+            />
+            <input
+                type="range"
+                min="0"
+                max="100"
+                value={zoomLevel}
+                onChange={handleSliderChange}
+                onClick={handleSliderClick}
+                className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                style={{ 
+                writingMode: 'vertical-lr',
+                direction: 'rtl',
+                }}
+            />
+            </div>
+            
+            <button
+            onClick={handleZoomOut}
+            disabled={zoomLevel <= 0}
+            className="p-1 rounded-full hover:bg-gray-100 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+            title="Zoom Out (todos os dados)"
+            >
+            <Minus size={14} className="text-gray-500" />
+            </button>
+        </div>
       </div>
     </div>
   );

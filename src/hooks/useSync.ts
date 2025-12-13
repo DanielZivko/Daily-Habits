@@ -41,7 +41,8 @@ const mapTaskHistoryFromSupabase = (th: any, userId: string): TaskHistory => ({
   userId: userId,
   taskId: th.task_id,
   date: new Date(th.date),
-  value: th.value
+  value: th.value,
+  measurements: th.measurements // Mapeia o campo JSONB measurements
 });
 
 export function useSync() {
@@ -121,7 +122,8 @@ export function useSync() {
                   id: cleanData.id,
                   task_id: cleanData.taskId,
                   date: dateFields.date,
-                  value: cleanData.value
+                  value: cleanData.value,
+                  measurements: cleanData.measurements // Inclui measurements no payload
               };
           }
 
@@ -166,6 +168,35 @@ export function useSync() {
          // @ts-ignore
          Dexie.currentTransaction.source = 'sync';
          
+         // IDs que existem no backend (fonte da verdade)
+         const remoteGroupIds = new Set(groupsRes.data?.map(g => g.id) || []);
+         const remoteTaskIds = new Set(tasksRes.data?.map(t => t.id) || []);
+         const remoteHistoryIds = new Set(historyRes.data?.map(h => h.id) || []);
+
+         // Buscar IDs locais do usuário atual
+         const localGroups = await db.groups.where('userId').equals(user.id).toArray();
+         const localTasks = await db.tasks.where('userId').equals(user.id).toArray();
+         const localHistory = await db.taskHistory.where('userId').equals(user.id).toArray();
+
+         // Identificar e remover registros locais que não existem mais no backend
+         const groupsToDelete = localGroups.filter(g => !remoteGroupIds.has(g.id)).map(g => g.id);
+         const tasksToDelete = localTasks.filter(t => !remoteTaskIds.has(t.id)).map(t => t.id);
+         const historyToDelete = localHistory.filter(h => !remoteHistoryIds.has(h.id)).map(h => h.id);
+
+         if (groupsToDelete.length > 0) {
+           console.log(`[Sync] Removendo ${groupsToDelete.length} grupos deletados no backend`);
+           await db.groups.bulkDelete(groupsToDelete);
+         }
+         if (tasksToDelete.length > 0) {
+           console.log(`[Sync] Removendo ${tasksToDelete.length} tarefas deletadas no backend`);
+           await db.tasks.bulkDelete(tasksToDelete);
+         }
+         if (historyToDelete.length > 0) {
+           console.log(`[Sync] Removendo ${historyToDelete.length} históricos deletados no backend`);
+           await db.taskHistory.bulkDelete(historyToDelete);
+         }
+
+         // Adicionar/atualizar dados do backend
          if (groupsRes.data) {
            await db.groups.bulkPut(groupsRes.data.map(g => mapGroupFromSupabase(g, user.id)));
          }

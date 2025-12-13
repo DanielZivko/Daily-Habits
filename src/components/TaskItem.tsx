@@ -5,7 +5,7 @@ import { Checkbox } from "./ui/Checkbox";
 import { ProgressBar } from "./ui/ProgressBar";
 import { TaskStatisticsChart } from "./TaskStatisticsChart";
 import { Pencil, Trash2, Flag, Copy } from "lucide-react";
-import { format, differenceInMilliseconds, formatDistanceToNow, differenceInDays } from "date-fns";
+import { format, differenceInMilliseconds, formatDistanceToNow, differenceInDays, addMinutes, addHours, addDays, addWeeks, addMonths } from "date-fns";
 import { ptBR } from "date-fns/locale";
 
 // Função para determinar se o card deve estar no estado compacto (encolhido)
@@ -140,20 +140,40 @@ export const TaskItem: React.FC<TaskItemProps> = ({ task, onToggle, onEdit, onDu
           return "A fazer";
       }
 
+      const lastCompleted = new Date(task.lastCompletedDate);
+      const interval = task.interval || 1;
+      let nextDueDate = new Date();
+
+      if (task.frequency === 'minutes') nextDueDate = addMinutes(lastCompleted, interval);
+      else if (task.frequency === 'hours') nextDueDate = addHours(lastCompleted, interval);
+      else if (task.frequency === 'daily') nextDueDate = addDays(lastCompleted, interval);
+      else if (task.frequency === 'weekly') nextDueDate = addWeeks(lastCompleted, interval);
+      else if (task.frequency === 'monthly') nextDueDate = addMonths(lastCompleted, interval);
+      else nextDueDate = addDays(lastCompleted, interval);
+
       if (progress >= 100) {
-          const dueDate = new Date(task.date);
-          const diff = differenceInMilliseconds(new Date(), dueDate);
+          // Calcular ciclos expirados
+          const now = new Date();
+          const recurrenceMs = getRecurrenceIntervalMs(task.frequency || 'daily', interval);
           
-          // Se diff > 0, está vencido.
-          if (diff > 0) {
-             return <span className={cn("text-red-600 font-medium", isCompact ? "text-[8px]" : "text-[10px]")}>Vencido há {formatDistanceToNow(dueDate, { locale: ptBR })}</span>;
-          }
-          return <span className={cn("text-red-600 font-medium", isCompact ? "text-[8px]" : "text-[10px]")}>Vencido</span>;
+          // Tempo que passou ALÉM do prazo
+          const timeOverdue = now.getTime() - nextDueDate.getTime();
+          
+          // Quantos ciclos inteiros cabem nesse tempo extra?
+          // +1 porque o ciclo atual já expirou
+          const cycles = Math.floor(timeOverdue / recurrenceMs) + 1;
+
+          return (
+             <span className={cn("text-red-600 font-medium", isCompact ? "text-[8px]" : "text-[10px]")}>
+                Expirado há {formatDistanceToNow(nextDueDate, { locale: ptBR }).replace('cerca de ', '')}
+                {cycles > 1 ? ` (${cycles} ciclos)` : ''}
+             </span>
+          );
       }
       
       return (
         <span className={isCompact ? "text-[8px]" : "text-[10px]"}>
-            Última: {formatDistanceToNow(new Date(task.lastCompletedDate), { addSuffix: true, locale: ptBR })}
+            Repetir em {formatDistanceToNow(nextDueDate, { locale: ptBR }).replace('cerca de ', '')}
         </span>
       );
   };
@@ -167,7 +187,12 @@ export const TaskItem: React.FC<TaskItemProps> = ({ task, onToggle, onEdit, onDu
                       "font-medium text-blue-600 bg-blue-50 rounded border border-blue-100 inline-block",
                       isCompact ? "text-[8px] px-1 py-0" : "text-[10px] px-1.5 py-0.5"
                     )}>
-                         {[m.description, m.value, m.unit].filter(Boolean).join(" ")}
+                         {[
+                            m.description, 
+                            m.value, 
+                            m.unit, 
+                            m.target ? `(Meta: ${m.target})` : null
+                         ].filter(Boolean).join(" ")}
                     </div>
                 ))}
               </div>

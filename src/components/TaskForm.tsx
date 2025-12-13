@@ -4,14 +4,17 @@ import { db } from "../db/db";
 import type { Task, TaskType } from "../types";
 import { Button } from "./ui/Button";
 import { Input } from "./ui/Input";
-import { Zap, RotateCw, Flag, Plus, Trash2 } from "lucide-react";
+import { Zap, RotateCw, Flag, Plus, Trash2, Clock, Calendar, Target } from "lucide-react";
 import { cn } from "../lib/utils";
 import { useAuth } from "../contexts/AuthContext";
+import { addMinutes, addHours, addDays, differenceInDays, differenceInHours, differenceInMinutes } from "date-fns";
+import { Checkbox } from "./ui/Checkbox";
 
 interface Measure {
   description: string;
   value: string;
   unit: string;
+  target?: string;
 }
 
 interface TaskFormProps {
@@ -38,9 +41,15 @@ export const TaskForm: React.FC<TaskFormProps> = ({ initialTask, initialGroupId,
   
   // Measure fields - Array
   const [measures, setMeasures] = useState<Measure[]>([]);
-
-  // Objective fields
-  const [deadline, setDeadline] = useState(initialTask?.deadline ? new Date(initialTask.deadline).toISOString().split('T')[0] : "");
+  
+  // Timer fields for Immediate tasks
+  const [deadlineMode, setDeadlineMode] = useState<'date' | 'timer'>('date');
+  const [datePart, setDatePart] = useState("");
+  const [timePart, setTimePart] = useState("");
+  
+  const [timerDays, setTimerDays] = useState(0);
+  const [timerHours, setTimerHours] = useState(0);
+  const [timerMinutes, setTimerMinutes] = useState(0);
 
   // Effect to update form fields when initialTask changes (for editing)
   useEffect(() => {
@@ -51,14 +60,24 @@ export const TaskForm: React.FC<TaskFormProps> = ({ initialTask, initialGroupId,
         setType(initialTask.type);
         setInterval(initialTask.interval || 1);
         setFrequency(initialTask.frequency || "daily");
-        setDeadline(initialTask.deadline ? new Date(initialTask.deadline).toISOString().split('T')[0] : "");
+        
+        // Split deadline into date and time parts
+        if (initialTask.deadline) {
+            const d = new Date(initialTask.deadline);
+            setDatePart(d.toISOString().split('T')[0]); // YYYY-MM-DD
+            setTimePart(d.toTimeString().slice(0, 5)); // HH:mm
+        } else {
+            setDatePart("");
+            setTimePart("");
+        }
         
         // Load measures from new array structure or migrate legacy fields
         if (initialTask.measures && initialTask.measures.length > 0) {
             setMeasures(initialTask.measures.map(m => ({
                 description: m.description || "",
                 value: m.value || "",
-                unit: m.unit || ""
+                unit: m.unit || "",
+                target: m.target
             })));
         } else if (initialTask.measureValue || initialTask.measureDescription) {
             // Migration for edit: convert old single fields to array
@@ -85,7 +104,8 @@ export const TaskForm: React.FC<TaskFormProps> = ({ initialTask, initialGroupId,
         setType("immediate");
         setInterval(1);
         setFrequency("daily");
-        setDeadline("");
+        setDatePart("");
+        setTimePart("");
         setMeasures([]);
     }
   }, [initialTask, initialGroupId, groups]);
@@ -106,10 +126,96 @@ export const TaskForm: React.FC<TaskFormProps> = ({ initialTask, initialGroupId,
     setMeasures(measures.filter((_, i) => i !== index));
   };
 
-  const updateMeasure = (index: number, field: keyof Measure, value: string) => {
+  const updateMeasure = (index: number, field: keyof Measure, value: string | undefined) => {
     const newMeasures = [...measures];
-    newMeasures[index] = { ...newMeasures[index], [field]: value };
+    
+    // Validação de número para value e target SEMPRE (agora que o usuário pediu)
+    if (field === 'value' || field === 'target') {
+        if (value === undefined && field === 'target') {
+             // Caso especial para remover meta
+             const m = { ...newMeasures[index] };
+             delete m.target;
+             newMeasures[index] = m;
+        } else {
+             // Permite números, vírgula e ponto. Remove outros caracteres.
+            const cleanValue = (value || "").replace(/[^0-9.,]/g, '');
+            newMeasures[index] = { ...newMeasures[index], [field]: cleanValue };
+        }
+    } else {
+         newMeasures[index] = { ...newMeasures[index], [field]: value };
+    }
+    
     setMeasures(newMeasures);
+  };
+  
+  const toggleTarget = (index: number) => {
+      const measure = measures[index];
+      if (measure.target !== undefined) {
+          // Remover meta
+          updateMeasure(index, 'target', undefined);
+      } else {
+          // Adicionar meta (inicia vazio)
+          updateMeasure(index, 'target', "");
+      }
+  };
+
+  const handleModeChange = (newMode: 'date' | 'timer') => {
+      if (newMode === deadlineMode) return;
+
+      const now = new Date();
+
+      if (newMode === 'timer') {
+          // Converter Data -> Timer
+          if (datePart) {
+              const time = timePart || "23:59";
+              const targetDate = new Date(`${datePart}T${time}`);
+              
+              if (targetDate > now) {
+                  const diffDays = differenceInDays(targetDate, now);
+                  
+                  // Calcular diferença de horas restante
+                  const targetMinusDays = addDays(now, diffDays);
+                  let diffHours = differenceInHours(targetDate, targetMinusDays);
+                  
+                  // Calcular diferença de minutos restante
+                  const targetMinusHours = addHours(targetMinusDays, diffHours);
+                  let diffMinutes = differenceInMinutes(targetDate, targetMinusHours);
+                  
+                  // Pequeno ajuste para arredondamento ou segundos
+                  if (diffMinutes < 0) { diffMinutes = 0; }
+                  if (diffHours < 0) { diffHours = 0; }
+
+                  setTimerDays(diffDays);
+                  setTimerHours(diffHours);
+                  setTimerMinutes(diffMinutes);
+              } else {
+                  setTimerDays(0);
+                  setTimerHours(0);
+                  setTimerMinutes(0);
+              }
+          }
+      } else {
+          // Converter Timer -> Data
+          if (timerDays > 0 || timerHours > 0 || timerMinutes > 0) {
+              let targetDate = new Date();
+              targetDate = addDays(targetDate, timerDays);
+              targetDate = addHours(targetDate, timerHours);
+              targetDate = addMinutes(targetDate, timerMinutes);
+              
+              // Arredondar para o minuto seguinte para evitar passado imediato
+              targetDate = addMinutes(targetDate, 1);
+              
+              setDatePart(targetDate.toISOString().split('T')[0]);
+              setTimePart(targetDate.toTimeString().slice(0, 5));
+          } else if (!datePart) {
+              // Se timer zerado e data vazia, inicia com agora
+              const d = new Date();
+              setDatePart(d.toISOString().split('T')[0]);
+              setTimePart(d.toTimeString().slice(0, 5));
+          }
+      }
+
+      setDeadlineMode(newMode);
   };
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -140,7 +246,20 @@ export const TaskForm: React.FC<TaskFormProps> = ({ initialTask, initialGroupId,
 
     // Only immediate tasks keep deadline
     if (type === 'immediate') {
-      taskData.deadline = deadline ? new Date(deadline) : undefined;
+      if (deadlineMode === 'timer' && (timerDays > 0 || timerHours > 0 || timerMinutes > 0)) {
+          let targetDate = new Date();
+          if (timerDays > 0) targetDate = addDays(targetDate, timerDays);
+          if (timerHours > 0) targetDate = addHours(targetDate, timerHours);
+          if (timerMinutes > 0) targetDate = addMinutes(targetDate, timerMinutes);
+          taskData.deadline = targetDate;
+      } else {
+          if (datePart) {
+             const time = timePart || "23:59";
+             taskData.deadline = new Date(`${datePart}T${time}`);
+          } else {
+             taskData.deadline = undefined;
+          }
+      }
     }
 
     if (type === 'objective') {
@@ -232,18 +351,102 @@ export const TaskForm: React.FC<TaskFormProps> = ({ initialTask, initialGroupId,
 
         {type === 'immediate' && (
            <div className="rounded-lg border border-gray-100 bg-gray-50 p-4 space-y-4">
-               <div className="flex items-center gap-2 mb-2">
-                <Flag size={16} className="text-orange-500" />
-                <span className="text-sm font-semibold text-gray-700">DEFINIÇÃO DE PRAZO (Opcional)</span>
+               <div className="flex items-center justify-between mb-2">
+                 <div className="flex items-center gap-2">
+                    <Flag size={16} className="text-orange-500" />
+                    <span className="text-sm font-semibold text-gray-700">DEFINIÇÃO DE PRAZO (Opcional)</span>
+                 </div>
+                 
+                 <div className="flex bg-white rounded-lg border border-gray-200 p-0.5">
+                    <button
+                        type="button"
+                        onClick={() => handleModeChange('date')}
+                        className={cn(
+                            "flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all",
+                            deadlineMode === 'date' ? "bg-blue-50 text-blue-600 shadow-sm" : "text-gray-500 hover:text-gray-700"
+                        )}
+                    >
+                        <Calendar size={14} /> Data Fixa
+                    </button>
+                    <button
+                        type="button"
+                        onClick={() => handleModeChange('timer')}
+                        className={cn(
+                            "flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all",
+                            deadlineMode === 'timer' ? "bg-blue-50 text-blue-600 shadow-sm" : "text-gray-500 hover:text-gray-700"
+                        )}
+                    >
+                        <Clock size={14} /> Timer
+                    </button>
+                 </div>
              </div>
-             <div>
-                 <label className="mb-1 block text-xs font-medium text-gray-500">Prazo Final</label>
-                 <Input 
-                    type="date"
-                    value={deadline}
-                    onChange={(e) => setDeadline(e.target.value)}
-                 />
-             </div>
+             
+             {deadlineMode === 'date' ? (
+                 <div className="grid grid-cols-2 gap-3">
+                     <div>
+                         <label className="mb-1 block text-xs font-medium text-gray-500">Data</label>
+                         <div className="relative">
+                             <Input 
+                                type="date"
+                                value={datePart}
+                                onChange={(e) => setDatePart(e.target.value)}
+                                onClick={(e) => e.currentTarget.showPicker?.()}
+                                className="pl-9 cursor-pointer" // Espaço para o ícone
+                             />
+                             <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" size={16} />
+                         </div>
+                     </div>
+                     <div>
+                         <label className="mb-1 block text-xs font-medium text-gray-500">Hora</label>
+                         <div className="relative">
+                             <Input 
+                                type="time"
+                                value={timePart}
+                                onChange={(e) => setTimePart(e.target.value)}
+                                onClick={(e) => e.currentTarget.showPicker?.()}
+                                className="pl-9 cursor-pointer" // Espaço para o ícone
+                             />
+                             <Clock className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" size={16} />
+                         </div>
+                     </div>
+                 </div>
+             ) : (
+                 <div className="space-y-3">
+                     <p className="text-xs text-gray-500">Defina quanto tempo você tem para concluir esta tarefa.</p>
+                     <div className="grid grid-cols-3 gap-3">
+                        <div>
+                            <label className="mb-1 block text-xs font-medium text-gray-500 text-center">Dias</label>
+                            <Input 
+                                type="number"
+                                min={0}
+                                value={timerDays}
+                                onChange={(e) => setTimerDays(Math.max(0, Number(e.target.value)))}
+                                className="text-center"
+                            />
+                        </div>
+                        <div>
+                            <label className="mb-1 block text-xs font-medium text-gray-500 text-center">Horas</label>
+                            <Input 
+                                type="number"
+                                min={0}
+                                value={timerHours}
+                                onChange={(e) => setTimerHours(Math.max(0, Number(e.target.value)))}
+                                className="text-center"
+                            />
+                        </div>
+                        <div>
+                            <label className="mb-1 block text-xs font-medium text-gray-500 text-center">Minutos</label>
+                            <Input 
+                                type="number"
+                                min={0}
+                                value={timerMinutes}
+                                onChange={(e) => setTimerMinutes(Math.max(0, Number(e.target.value)))}
+                                className="text-center"
+                            />
+                        </div>
+                     </div>
+                 </div>
+             )}
            </div>
         )}
 
@@ -304,49 +507,87 @@ export const TaskForm: React.FC<TaskFormProps> = ({ initialTask, initialGroupId,
                 )}
 
                 <div className="space-y-4">
-                    {measures.map((measure, index) => (
-                        <div key={index} className="relative rounded-md border border-gray-200 bg-white p-3">
-                            <button
-                                type="button"
-                                onClick={() => removeMeasure(index)}
-                                className="absolute right-2 top-2 text-gray-300 hover:text-red-500"
-                            >
-                                <Trash2 size={14} />
-                            </button>
-                            
-                            <div className="mb-3 pr-6">
-                                <label className="mb-1 block text-xs font-medium text-gray-500">Descrição</label>
-                                <Input 
-                                    value={measure.description} 
-                                    onChange={(e) => updateMeasure(index, 'description', e.target.value)} 
-                                    placeholder="Ex: Ler, Beber, Correr"
-                                    className="h-8 text-sm"
-                                />
-                            </div>
+                    {measures.map((measure, index) => {
+                        const hasTarget = measure.target !== undefined;
+                        
+                        return (
+                            <div key={index} className="relative rounded-md border border-gray-200 bg-white p-3">
+                                <button
+                                    type="button"
+                                    onClick={() => removeMeasure(index)}
+                                    className="absolute right-2 top-2 text-gray-300 hover:text-red-500"
+                                >
+                                    <Trash2 size={14} />
+                                </button>
+                                
+                                <div className="mb-3 pr-6">
+                                    <label className="mb-1 block text-xs font-medium text-gray-500">Descrição</label>
+                                    <Input 
+                                        value={measure.description} 
+                                        onChange={(e) => updateMeasure(index, 'description', e.target.value)} 
+                                        placeholder="Ex: Ler, Beber, Correr"
+                                        className="h-8 text-sm"
+                                    />
+                                </div>
 
-                            <div className="grid grid-cols-2 gap-3">
-                                <div>
-                                    <label className="mb-1 block text-xs font-medium text-gray-500">Valor</label>
-                                    <Input 
-                                        type="text" 
-                                        value={measure.value} 
-                                        onChange={(e) => updateMeasure(index, 'value', e.target.value)}
-                                        placeholder="Ex: 10" 
-                                        className="h-8 text-sm"
-                                    />
+                                <div className="grid grid-cols-2 gap-3 mb-2">
+                                    <div>
+                                        <label className="mb-1 block text-xs font-medium text-gray-500">Valor</label>
+                                        <Input 
+                                            type="text" 
+                                            inputMode="decimal"
+                                            value={measure.value} 
+                                            onChange={(e) => updateMeasure(index, 'value', e.target.value)}
+                                            placeholder="Ex: 10" 
+                                            className="h-8 text-sm"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="mb-1 block text-xs font-medium text-gray-500">Unidade</label>
+                                        <Input 
+                                            value={measure.unit} 
+                                            onChange={(e) => updateMeasure(index, 'unit', e.target.value)} 
+                                            placeholder="Ex: páginas"
+                                            className="h-8 text-sm"
+                                        />
+                                    </div>
                                 </div>
-                                <div>
-                                    <label className="mb-1 block text-xs font-medium text-gray-500">Unidade</label>
-                                    <Input 
-                                        value={measure.unit} 
-                                        onChange={(e) => updateMeasure(index, 'unit', e.target.value)} 
-                                        placeholder="Ex: páginas"
-                                        className="h-8 text-sm"
-                                    />
+                                
+                                <div className="mt-3 pt-2 border-t border-gray-100">
+                                    <div className="flex items-center gap-2 mb-2">
+                                        <Checkbox 
+                                            checked={hasTarget}
+                                            onCheckedChange={() => toggleTarget(index)}
+                                            id={`has-target-${index}`}
+                                        />
+                                        <label htmlFor={`has-target-${index}`} className="text-xs text-gray-600 font-medium cursor-pointer">
+                                            Definir Meta
+                                        </label>
+                                    </div>
+                                    
+                                    {hasTarget && (
+                                        <div className="animate-in fade-in slide-in-from-top-1 duration-200">
+                                            <label className="mb-1 block text-xs font-medium text-gray-500">Meta (Numérica)</label>
+                                            <div className="relative">
+                                                <Target size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" />
+                                                <Input 
+                                                    type="text"
+                                                    inputMode="decimal"
+                                                    value={measure.target || ""} 
+                                                    onChange={(e) => updateMeasure(index, 'target', e.target.value)} 
+                                                    placeholder="Ex: 15"
+                                                    className="h-8 text-sm pl-8"
+                                                />
+                                            </div>
+                                            <p className="mt-1 text-[10px] text-gray-400">
+                                                Ao ativar a meta, o gráfico mostrará a evolução deste valor.
+                                            </p>
+                                        </div>
+                                    )}
                                 </div>
                             </div>
-                        </div>
-                    ))}
+                        );
+                    })}
                 </div>
             </div>
         )}
