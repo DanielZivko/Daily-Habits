@@ -5,7 +5,7 @@ import { Button } from '../components/ui/Button';
 import { Card } from '../components/ui/Card';
 import { Input } from '../components/ui/Input';
 import { Modal } from '../components/ui/Modal';
-import { Download, Upload, Trash2, ArrowLeft, RefreshCw, Check, AlertTriangle } from 'lucide-react';
+import { Download, Upload, Trash2, ArrowLeft, Share2, Check, AlertTriangle } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 // import { useRegisterSW } from 'virtual:pwa-register/react';
@@ -17,16 +17,44 @@ export const Settings: React.FC = () => {
     const fileInputRef = useRef<HTMLInputElement>(null);
     const [isLoading, setIsLoading] = useState(false);
     const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
-    const [updateStatus, setUpdateStatus] = useState<'idle' | 'checking' | 'available' | 'latest'>('idle');
+    const [linkCopied, setLinkCopied] = useState(false);
     
     // Estado para o modal de confirmação de exclusão
     const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
     const [deleteConfirmText, setDeleteConfirmText] = useState('');
     const DELETE_CONFIRMATION_WORD = 'APAGAR';
 
-    // Mock hook for build without PWA plugin
-    const needRefresh = [false];
-    const updateServiceWorker = (_reload?: boolean) => {};
+    const APP_URL = 'https://daily-habits-ten.vercel.app/';
+
+    const handleShareLink = async () => {
+        try {
+            // Tenta usar a Web Share API (funciona bem em mobile)
+            if (navigator.share) {
+                await navigator.share({
+                    title: 'Daily Habits',
+                    text: 'Confira o Daily Habits - Organize suas tarefas e hábitos diários!',
+                    url: APP_URL,
+                });
+            } else {
+                // Fallback: copia para a área de transferência
+                await navigator.clipboard.writeText(APP_URL);
+                setLinkCopied(true);
+                setTimeout(() => setLinkCopied(false), 2000);
+            }
+        } catch (error) {
+            // Se o usuário cancelar o share ou houver erro, tenta copiar
+            if ((error as Error).name !== 'AbortError') {
+                try {
+                    await navigator.clipboard.writeText(APP_URL);
+                    setLinkCopied(true);
+                    setTimeout(() => setLinkCopied(false), 2000);
+                } catch {
+                    setMessage({ type: 'error', text: 'Não foi possível copiar o link.' });
+                    setTimeout(() => setMessage(null), 3000);
+                }
+            }
+        }
+    };
 
     const handleExport = async () => {
         try {
@@ -184,33 +212,6 @@ export const Settings: React.FC = () => {
         }
     };
 
-    const checkForUpdates = async () => {
-        setUpdateStatus('checking');
-        
-        if ('serviceWorker' in navigator) {
-            try {
-                const registration = await navigator.serviceWorker.ready;
-                await registration.update();
-                
-                // If needRefresh becomes true, it will be handled by the hook state
-                // Otherwise we assume latest after a short delay if no update found
-                setTimeout(() => {
-                    if (!needRefresh) {
-                        setUpdateStatus('latest');
-                        setTimeout(() => setUpdateStatus('idle'), 3000);
-                    }
-                }, 1000);
-                
-            } catch (e) {
-                console.error("Error checking for updates:", e);
-                setUpdateStatus('idle');
-                setMessage({ type: 'error', text: 'Erro ao verificar atualizações.' });
-            }
-        } else {
-             setUpdateStatus('idle');
-             setMessage({ type: 'error', text: 'Service Worker não suportado ou em modo de desenvolvimento.' });
-        }
-    };
 
     return (
         <div className="min-h-screen bg-gray-50 pb-20">
@@ -291,29 +292,18 @@ export const Settings: React.FC = () => {
                                 <Button 
                                     variant="outline" 
                                     size="sm"
-                                    onClick={() => needRefresh ? updateServiceWorker(true) : checkForUpdates()}
-                                    disabled={updateStatus === 'checking'}
-                                    className={needRefresh ? "bg-blue-50 text-blue-600 border-blue-200" : ""}
+                                    onClick={handleShareLink}
+                                    className={linkCopied ? "bg-green-50 text-green-600 border-green-200" : ""}
                                 >
-                                    {needRefresh ? (
+                                    {linkCopied ? (
                                         <>
-                                            <Download size={16} className="mr-2" />
-                                            Baixar e Instalar
-                                        </>
-                                    ) : updateStatus === 'checking' ? (
-                                        <>
-                                            <RefreshCw size={16} className="mr-2 animate-spin" />
-                                            Verificando...
-                                        </>
-                                    ) : updateStatus === 'latest' ? (
-                                        <>
-                                            <Check size={16} className="mr-2 text-green-500" />
-                                            Versão mais recente
+                                            <Check size={16} className="mr-2" />
+                                            Link Copiado!
                                         </>
                                     ) : (
                                         <>
-                                            <RefreshCw size={16} className="mr-2" />
-                                            Procurar Atualizações
+                                            <Share2 size={16} className="mr-2" />
+                                            Compartilhar Link
                                         </>
                                     )}
                                 </Button>
