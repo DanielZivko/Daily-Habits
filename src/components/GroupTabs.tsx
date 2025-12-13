@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import type { Group } from "../types";
 import { cn } from "../lib/utils";
-import { Plus } from "lucide-react";
+import { Plus, ChevronsLeft, ChevronsRight } from "lucide-react";
 import { getIconComponent } from "./ui/IconPicker";
 import { db } from "../db/db";
 import { Reorder, useDragControls } from "framer-motion";
@@ -140,10 +140,33 @@ export const GroupTabs: React.FC<GroupTabsProps> = ({
   pendingCountByGroup
 }) => {
   const [localGroups, setLocalGroups] = useState<Group[]>(groups);
+  
+  // Refs e states para drag-to-scroll e setas
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const [isDragging, setIsDragging] = useState(false);
+  const [startX, setStartX] = useState(0);
+  const [scrollLeft, setScrollLeft] = useState(0);
+  const [canScrollLeft, setCanScrollLeft] = useState(false);
+  const [canScrollRight, setCanScrollRight] = useState(false);
 
   useEffect(() => {
     setLocalGroups(groups);
   }, [groups]);
+
+  // Verificar estado do scroll
+  const checkScroll = () => {
+    if (scrollRef.current) {
+      const { scrollLeft, scrollWidth, clientWidth } = scrollRef.current;
+      setCanScrollLeft(scrollLeft > 0);
+      setCanScrollRight(scrollLeft < scrollWidth - clientWidth - 1); // -1 para evitar falsos negativos por arredondamento
+    }
+  };
+
+  useEffect(() => {
+    checkScroll();
+    window.addEventListener('resize', checkScroll);
+    return () => window.removeEventListener('resize', checkScroll);
+  }, [localGroups]);
 
   const handleReorder = (newOrder: Group[]) => {
     setLocalGroups(newOrder);
@@ -160,33 +183,120 @@ export const GroupTabs: React.FC<GroupTabsProps> = ({
     });
   };
 
-  return (
-    <div className="flex items-center overflow-x-auto border-b border-gray-200 bg-white px-4 py-0 scrollbar-hide">
-      <Reorder.Group 
-        axis="x" 
-        values={localGroups} 
-        onReorder={handleReorder}
-        className="flex items-center gap-6"
-      >
-        {localGroups.map((group) => (
-          <GroupTabItem
-            key={group.id}
-            group={group}
-            isSelected={selectedGroupId === group.id}
-            onClick={() => onSelectGroup(group.id)}
-            onDragEnd={handleDragEnd}
-            pendingCount={pendingCountByGroup[group.id] || 0}
-          />
-        ))}
-      </Reorder.Group>
+  // Drag-to-Scroll Handlers
+  const onMouseDown = (e: React.MouseEvent) => {
+    if (!scrollRef.current) return;
+    setIsDragging(true);
+    setStartX(e.pageX - scrollRef.current.offsetLeft);
+    setScrollLeft(scrollRef.current.scrollLeft);
+  };
 
-      <button
-        onClick={onNewGroup}
-        className="ml-6 flex min-w-fit items-center gap-1 py-4 text-sm font-medium text-gray-400 hover:text-blue-500"
+  const onMouseLeave = () => {
+    setIsDragging(false);
+  };
+
+  const onMouseUp = () => {
+    setIsDragging(false);
+  };
+
+  const onMouseMove = (e: React.MouseEvent) => {
+    if (!isDragging || !scrollRef.current) return;
+    e.preventDefault();
+    const x = e.pageX - scrollRef.current.offsetLeft;
+    const walk = (x - startX) * 1.5; // Multiplicador para velocidade do scroll
+    scrollRef.current.scrollLeft = scrollLeft - walk;
+    checkScroll(); // Atualizar setas durante o drag
+  };
+
+  const scrollByAmount = (amount: number) => {
+    if (scrollRef.current) {
+      scrollRef.current.scrollBy({ left: amount, behavior: 'smooth' });
+      // O evento de scroll cuidará de atualizar as setas, mas podemos forçar check após delay
+      setTimeout(checkScroll, 300);
+    }
+  };
+
+  return (
+    <div className="relative border-b border-gray-200 bg-white px-4 py-0 group-tabs-container">
+      {/* Seta Esquerda com Degradê - Estilo Clean */}
+      <div 
+        className={cn(
+          "pointer-events-none absolute left-0 top-0 z-10 flex h-full w-20 items-center justify-start bg-gradient-to-r from-white via-white/90 to-transparent pl-1 transition-opacity duration-300",
+          canScrollLeft ? "opacity-100" : "opacity-0"
+        )}
       >
-        <Plus size={16} />
-        <span className="hidden md:inline">Novo</span>
-      </button>
+        <button
+          onClick={() => scrollByAmount(-200)}
+          className="pointer-events-auto text-gray-300 hover:text-gray-500 transition-colors"
+          aria-label="Scroll left"
+        >
+          <ChevronsLeft size={24} strokeWidth={1.5} />
+        </button>
+      </div>
+
+      {/* Um único scroll horizontal: tabs + botão Novo no mesmo fluxo */}
+      <div 
+        ref={scrollRef}
+        className={cn(
+          "overflow-x-auto pb-1 scrollbar-hide", // scrollbar-hide deve funcionar se a classe estiver disponível
+          isDragging ? "cursor-grabbing" : "cursor-grab"
+        )}
+        style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }} // Forçar ocultação via style inline também
+        onMouseDown={onMouseDown}
+        onMouseLeave={onMouseLeave}
+        onMouseUp={onMouseUp}
+        onMouseMove={onMouseMove}
+        onScroll={checkScroll} // Monitorar scroll nativo
+      >
+        <div className="flex min-w-max items-center gap-6 px-6"> 
+          <Reorder.Group 
+            axis="x" 
+            values={localGroups} 
+            onReorder={handleReorder}
+            className="flex items-center gap-6"
+          >
+            {localGroups.map((group) => (
+              <GroupTabItem
+                key={group.id}
+                group={group}
+                isSelected={selectedGroupId === group.id}
+                onClick={() => {
+                    // Evita clique acidental se estiver arrastando (pequeno threshold)
+                    if (!isDragging) onSelectGroup(group.id);
+                }}
+                onDragEnd={handleDragEnd}
+                pendingCount={pendingCountByGroup[group.id] || 0}
+              />
+            ))}
+          </Reorder.Group>
+
+          <button
+            onClick={onNewGroup}
+            className="flex shrink-0 min-w-fit items-center gap-1 py-4 text-sm font-medium text-gray-400 hover:text-blue-500"
+            // Impedir que o clique no botão dispare o drag
+            onMouseDown={(e) => e.stopPropagation()} 
+          >
+            <Plus size={16} />
+            <span className="hidden md:inline">Novo</span>
+          </button>
+        </div>
+      </div>
+
+      {/* Seta Direita com Degradê - Estilo Clean */}
+      <div 
+        className={cn(
+          "pointer-events-none absolute right-0 top-0 z-10 flex h-full w-20 items-center justify-end bg-gradient-to-l from-white via-white/90 to-transparent pr-1 transition-opacity duration-300",
+          canScrollRight ? "opacity-100" : "opacity-0"
+        )}
+      >
+        <button
+          onClick={() => scrollByAmount(200)}
+          className="pointer-events-auto text-gray-300 hover:text-gray-500 transition-colors"
+          aria-label="Scroll right"
+        >
+          <ChevronsRight size={24} strokeWidth={1.5} />
+        </button>
+      </div>
     </div>
   );
 };

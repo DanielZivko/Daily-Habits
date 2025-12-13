@@ -17,6 +17,33 @@ body {
   @apply bg-gray-50 text-gray-900;
 }
 
+/* --- Scrollbar Customizada --- */
+/* Webkit (Chrome, Safari, Edge, Opera) */
+::-webkit-scrollbar {
+  width: 3px;
+  height: 3px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background-color: #d1d5db; /* gray-300 */
+  border-radius: 9999px; /* full rounded */
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background-color: #9ca3af; /* gray-400 */
+}
+
+/* Firefox */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #d1d5db transparent;
+}
+
+
 /* Animações de Glow para tarefas pendentes */
 /* Glow pulsando "de dentro" usando pseudo-elemento */
 @keyframes glow-pulse-inner {
