@@ -30,10 +30,24 @@ const isTaskOverdue = (task: Task): boolean => {
     return new Date(task.deadline) < now;
   }
   
-  // Tarefas recorrentes: vencida se a data de próxima execução já passou (barra 100%)
+  // Tarefas recorrentes:
+  // Critério de "pendente" deve ser consistente com a barrinha (TaskItem):
+  // - Só conta como pendente se já foi completada ao menos 1 vez (lastCompletedDate existe)
+  // - E se estourou o prazo do próximo ciclo (now > lastCompletedDate + intervalo)
   if (task.type === 'recurrent') {
-    if (!task.date) return false;
-    return new Date(task.date) < now;
+    if (!task.lastCompletedDate) return false;
+    const lastCompleted = new Date(task.lastCompletedDate);
+    const interval = task.interval || 1;
+    let nextDueDate = new Date(lastCompleted);
+
+    if (task.frequency === 'minutes') nextDueDate = addMinutes(lastCompleted, interval);
+    else if (task.frequency === 'hours') nextDueDate = addHours(lastCompleted, interval);
+    else if (task.frequency === 'daily') nextDueDate = addDays(lastCompleted, interval);
+    else if (task.frequency === 'weekly') nextDueDate = addWeeks(lastCompleted, interval);
+    else if (task.frequency === 'monthly') nextDueDate = addMonths(lastCompleted, interval);
+    else nextDueDate = addDays(lastCompleted, interval);
+
+    return nextDueDate < now;
   }
   
   return false;
@@ -114,28 +128,22 @@ export const Dashboard: React.FC = () => {
 
   const performTaskCompletion = async (task: Task, measurements: Record<string, number> = {}) => {
     if (task.type === 'recurrent') {
-        const currentDueDate = new Date(task.date);
+        // Mantém `date` como "próxima execução" consistente com a barrinha:
+        // nextDueDate = now + intervalo
+        const now = new Date();
         const interval = task.interval || 1;
-        let nextDate = new Date(currentDueDate);
+        let nextDate = new Date(now);
 
-        if (task.frequency === 'daily') nextDate = addDays(currentDueDate, interval);
-        else if (task.frequency === 'weekly') nextDate = addWeeks(currentDueDate, interval);
-        else if (task.frequency === 'monthly') nextDate = addMonths(currentDueDate, interval);
-        else if (task.frequency === 'hours') nextDate = addHours(currentDueDate, interval);
-        else if (task.frequency === 'minutes') nextDate = addMinutes(currentDueDate, interval);
-        else nextDate = addDays(currentDueDate, 1);
-
-        if (nextDate < new Date()) {
-             if (task.frequency === 'daily') nextDate = addDays(new Date(), interval);
-             else if (task.frequency === 'weekly') nextDate = addWeeks(new Date(), interval);
-             else if (task.frequency === 'monthly') nextDate = addMonths(new Date(), interval);
-             else if (task.frequency === 'hours') nextDate = addHours(new Date(), interval);
-             else if (task.frequency === 'minutes') nextDate = addMinutes(new Date(), interval);
-        }
+        if (task.frequency === 'daily') nextDate = addDays(now, interval);
+        else if (task.frequency === 'weekly') nextDate = addWeeks(now, interval);
+        else if (task.frequency === 'monthly') nextDate = addMonths(now, interval);
+        else if (task.frequency === 'hours') nextDate = addHours(now, interval);
+        else if (task.frequency === 'minutes') nextDate = addMinutes(now, interval);
+        else nextDate = addDays(now, interval);
         
         await db.transaction('rw', db.tasks, db.taskHistory, async () => {
             await db.tasks.update(task.id, {
-                lastCompletedDate: new Date(),
+                lastCompletedDate: now,
                 date: nextDate,
                 status: false
             });
@@ -145,7 +153,7 @@ export const Dashboard: React.FC = () => {
                 id: crypto.randomUUID(),
                 userId: currentUserId,
                 taskId: task.id,
-                date: new Date(),
+                date: now,
                 value: 1,
                 measurements // Salva medições
             });

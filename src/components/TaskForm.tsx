@@ -7,7 +7,7 @@ import { Input } from "./ui/Input";
 import { Zap, RotateCw, Flag, Plus, Trash2, Clock, Calendar, Target } from "lucide-react";
 import { cn } from "../lib/utils";
 import { useAuth } from "../contexts/AuthContext";
-import { addMinutes, addHours, addDays, differenceInDays, differenceInHours, differenceInMinutes } from "date-fns";
+import { addMinutes, addHours, addDays, addWeeks, addMonths, differenceInDays, differenceInHours, differenceInMinutes } from "date-fns";
 import { Checkbox } from "./ui/Checkbox";
 
 interface Measure {
@@ -242,6 +242,19 @@ export const TaskForm: React.FC<TaskFormProps> = ({ initialTask, initialGroupId,
     if (type === 'recurrent') {
       taskData.interval = Number(interval);
       taskData.frequency = frequency;
+
+      // Para recorrentes, `date` representa a "próxima execução".
+      // Se for uma tarefa nova (ainda sem lastCompletedDate), iniciamos o primeiro ciclo a partir de agora.
+      if (!initialTask?.lastCompletedDate) {
+        const now = new Date();
+        const safeInterval = Number(interval) || 1;
+        if (frequency === 'minutes') taskData.date = addMinutes(now, safeInterval);
+        else if (frequency === 'hours') taskData.date = addHours(now, safeInterval);
+        else if (frequency === 'daily') taskData.date = addDays(now, safeInterval);
+        else if (frequency === 'weekly') taskData.date = addWeeks(now, safeInterval);
+        else if (frequency === 'monthly') taskData.date = addMonths(now, safeInterval);
+        else taskData.date = addDays(now, safeInterval);
+      }
     }
 
     // Only immediate tasks keep deadline
