@@ -60,7 +60,7 @@ export const Dashboard: React.FC = () => {
   const currentUserId = user ? user.id : 'guest';
 
   const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null);
-  const [isCalendarSelected, setIsCalendarSelected] = useState(false);
+  const [isCalendarSelected, setIsCalendarSelected] = useState(true);
   const [selectedCalendarPeriod, setSelectedCalendarPeriod] = useState<CalendarPeriod>('today');
   const [customStartDate, setCustomStartDate] = useState<Date | null>(null);
   const [customEndDate, setCustomEndDate] = useState<Date | null>(null);
@@ -121,7 +121,12 @@ export const Dashboard: React.FC = () => {
 
   // Set initial group selection (only if calendar is not selected)
   React.useEffect(() => {
-      if (!isCalendarSelected && !selectedGroupId && groups && groups.length > 0) {
+      // Se calendário está selecionado, não selecionar grupo automaticamente
+      if (isCalendarSelected) {
+        return;
+      }
+      
+      if (!selectedGroupId && groups && groups.length > 0) {
           setSelectedGroupId(groups[0].id);
       } else if (groups && groups.length === 0) {
         setSelectedGroupId(null);
