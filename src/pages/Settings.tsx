@@ -285,7 +285,7 @@ export const Settings: React.FC = () => {
                          <Card className="p-6">
                             <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
                                 <div>
-                                    <p className="text-gray-600 font-medium">Daily Habits PWA v1.6.1</p>
+                                    <p className="text-gray-600 font-medium">Daily Habits PWA v1.7.0</p>
                                     <p className="text-sm text-gray-400 mt-1">Desenvolvido com React, Vite e Dexie.js</p>
                                 </div>
                                 
