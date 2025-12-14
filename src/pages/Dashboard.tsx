@@ -15,7 +15,9 @@ import { TaskForm } from "../components/TaskForm";
 import { GroupForm } from "../components/GroupForm";
 import { getIconComponent } from "../components/ui/IconPicker";
 import { useAuth } from "../contexts/AuthContext";
+import { useUndo } from "../contexts/UndoContext";
 import { MeasurementInputModal } from "../components/MeasurementInputModal";
+import { UndoButton } from "../components/UndoButton";
 
 // Função para verificar se uma tarefa está "pendente" (vencida)
 // Apenas tarefas imediatas e recorrentes, nunca objetivos
@@ -57,6 +59,7 @@ const isTaskOverdue = (task: Task): boolean => {
 
 export const Dashboard: React.FC = () => {
   const { user } = useAuth();
+  const { pushAction } = useUndo();
   const currentUserId = user ? user.id : 'guest';
 
   const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null);
@@ -149,6 +152,10 @@ export const Dashboard: React.FC = () => {
   const pendingCount = selectedGroupId ? (pendingCountByGroup[selectedGroupId] || 0) : 0;
 
   const performTaskCompletion = async (task: Task, measurements: Record<string, number> = {}) => {
+    // Salvar estado anterior para desfazer
+    const previousTask = { ...task };
+    let historyId: string | undefined;
+
     if (task.type === 'recurrent') {
         // Mantém `date` como "próxima execução" consistente com a barrinha:
         // nextDueDate = now + intervalo
@@ -171,8 +178,9 @@ export const Dashboard: React.FC = () => {
             });
             
             // Add history
+            historyId = crypto.randomUUID();
             await db.taskHistory.add({
-                id: crypto.randomUUID(),
+                id: historyId,
                 userId: currentUserId,
                 taskId: task.id,
                 date: now,
@@ -191,6 +199,16 @@ export const Dashboard: React.FC = () => {
                 await db.tasks.update(task.id, { measures: updatedMeasures });
             }
         });
+
+        // Registrar ação para desfazer
+        pushAction({
+            type: 'complete_task',
+            previousState: { task: previousTask },
+            metadata: {
+                taskId: task.id,
+                deletedTaskHistoryIds: historyId ? [historyId] : [],
+            },
+        });
         
     } else {
         // Toggle Logic for Immediate and Objective tasks
@@ -207,8 +225,9 @@ export const Dashboard: React.FC = () => {
             }
 
             if (isCompleting) {
+                historyId = crypto.randomUUID();
                 await db.taskHistory.add({
-                    id: crypto.randomUUID(),
+                    id: historyId,
                     userId: currentUserId,
                     taskId: task.id,
                     date: new Date(),
@@ -228,6 +247,18 @@ export const Dashboard: React.FC = () => {
                 }
             }
         });
+
+        // Registrar ação para desfazer apenas se estiver completando
+        if (isCompleting) {
+            pushAction({
+                type: 'complete_task',
+                previousState: { task: previousTask },
+                metadata: {
+                    taskId: task.id,
+                    deletedTaskHistoryIds: historyId ? [historyId] : [],
+                },
+            });
+        }
     }
   };
 
@@ -284,7 +315,24 @@ export const Dashboard: React.FC = () => {
 
   const handleDeleteTask = async (task: Task) => {
       if (confirm('Tem certeza que deseja excluir esta tarefa?')) {
-          await db.tasks.delete(task.id);
+          // Salvar estado anterior (tarefa e histórico) para desfazer
+          const taskHistory = await db.taskHistory.where('taskId').equals(task.id).toArray();
+          
+          pushAction({
+              type: 'delete_task',
+              previousState: {
+                  task: { ...task },
+                  taskHistory: taskHistory.map(h => ({ ...h })),
+              },
+              metadata: {
+                  taskId: task.id,
+              },
+          });
+
+          await db.transaction('rw', db.tasks, db.taskHistory, async () => {
+              await db.taskHistory.where('taskId').equals(task.id).delete();
+              await db.tasks.delete(task.id);
+          });
       }
   };
   
@@ -331,7 +379,8 @@ export const Dashboard: React.FC = () => {
       }
 
       if (editingTask) {
-          // Editing existing task
+          // Editing existing task - salvar estado anterior
+          const previousTask = { ...editingTask };
           let updateData = { ...taskData };
           
           if (editingTask.type === 'recurrent' && taskData.type === 'recurrent') {
@@ -369,8 +418,16 @@ export const Dashboard: React.FC = () => {
           if (!updateData.userId) updateData.userId = currentUserId;
 
           await db.tasks.update(editingTask.id, updateData);
+
+          // Registrar ação para desfazer
+          pushAction({
+              type: 'update_task',
+              previousState: { task: previousTask },
+              metadata: { taskId: editingTask.id },
+          });
       } else {
           // Creating new task
+          const newTaskId = crypto.randomUUID();
           await db.tasks.add({
               ...taskData,
               userId: currentUserId, // Explicitly set user context
@@ -379,8 +436,15 @@ export const Dashboard: React.FC = () => {
               lastCompletedDate: undefined,
               type: taskData.type || 'immediate',
               groupId: taskData.groupId || selectedGroupId || targetGroupId,
-              id: crypto.randomUUID() // Force new UUID for duplicated tasks to avoid collision
+              id: newTaskId // Force new UUID for duplicated tasks to avoid collision
           } as Task);
+
+          // Registrar ação para desfazer
+          pushAction({
+              type: 'create_task',
+              previousState: {},
+              metadata: { taskId: newTaskId },
+          });
       }
       setIsTaskModalOpen(false);
       setCopyTask(null);
@@ -398,25 +462,55 @@ export const Dashboard: React.FC = () => {
 
   const handleSaveGroup = async (groupData: Partial<Group>) => {
       if (editingGroup) {
-          // Ensure userId is preserved
+          // Editing existing group - salvar estado anterior
+          const previousGroup = { ...editingGroup };
           const updatePayload = { ...groupData };
           if (!updatePayload.userId) updatePayload.userId = currentUserId;
           await db.groups.update(editingGroup.id, updatePayload);
+
+          // Registrar ação para desfazer
+          pushAction({
+              type: 'update_group',
+              previousState: { group: previousGroup },
+              metadata: { groupId: editingGroup.id },
+          });
       } else {
+          // Creating new group
           const lastGroup = await db.groups.where('userId').equals(currentUserId).sortBy('order').then(g => g[g.length-1]);
           const newOrder = (lastGroup?.order || 0) + 1;
           
+          const newGroupId = crypto.randomUUID();
           await db.groups.add({
               ...groupData,
               userId: currentUserId, // Explicitly set user context
-              order: newOrder
+              order: newOrder,
+              id: newGroupId
           } as Group);
+
+          // Registrar ação para desfazer
+          pushAction({
+              type: 'create_group',
+              previousState: {},
+              metadata: { groupId: newGroupId },
+          });
       }
       setIsGroupModalOpen(false);
   };
 
   const handleDeleteGroup = async (group: Group) => {
       if (confirm(`Tem certeza que deseja excluir o grupo "${group.title}" e todas as suas tarefas?`)) {
+          // Salvar estado anterior (grupo e todas as tarefas) para desfazer
+          const groupTasks = await db.tasks.where('groupId').equals(group.id).toArray();
+          
+          pushAction({
+              type: 'delete_group',
+              previousState: { 
+                  group: { ...group },
+                  tasks: groupTasks.map(t => ({ ...t })),
+              },
+              metadata: { groupId: group.id },
+          });
+
           await db.transaction('rw', db.groups, db.tasks, async () => {
               await db.tasks.where('groupId').equals(group.id).delete();
               await db.groups.delete(group.id);
@@ -582,6 +676,8 @@ export const Dashboard: React.FC = () => {
             task={completingTask}
             onConfirm={handleConfirmMeasurement}
         />
+
+        <UndoButton />
     </div>
   );
 };

@@ -3,6 +3,7 @@ import { Dashboard } from './pages/Dashboard';
 import { Settings } from './pages/Settings';
 import { Login } from './pages/Login';
 import { AuthProvider } from './contexts/AuthContext';
+import { UndoProvider } from './contexts/UndoContext';
 import { useSync } from './hooks/useSync';
 
 function AppContent() {
@@ -21,9 +22,11 @@ function AppContent() {
 function App() {
   return (
     <AuthProvider>
-      <BrowserRouter>
-        <AppContent />
-      </BrowserRouter>
+      <UndoProvider>
+        <BrowserRouter>
+          <AppContent />
+        </BrowserRouter>
+      </UndoProvider>
     </AuthProvider>
   );
 }

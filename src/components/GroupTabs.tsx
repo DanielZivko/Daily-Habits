@@ -6,6 +6,7 @@ import { getIconComponent } from "./ui/IconPicker";
 import { db } from "../db/db";
 import { Reorder, useDragControls } from "framer-motion";
 import { CalendarTab, CalendarSubTabs, type CalendarPeriod } from "./CalendarTab";
+import { useUndo } from "../contexts/UndoContext";
 
 // Função para determinar o nível de glow baseado na quantidade de tarefas pendentes
 const getGlowLevel = (pendingCount: number): 'none' | 'low' | 'medium' | 'high' => {
@@ -154,6 +155,7 @@ export const GroupTabs: React.FC<GroupTabsProps> = ({
   customEndDate,
   onCustomDateChange
 }) => {
+  const { pushAction } = useUndo();
   const [localGroups, setLocalGroups] = useState<Group[]>(groups);
   
   // Refs e states para drag-to-scroll e setas
@@ -188,6 +190,9 @@ export const GroupTabs: React.FC<GroupTabsProps> = ({
   };
 
   const handleDragEnd = async () => {
+    // Salvar ordem anterior para desfazer
+    const previousOrder = groups.map(g => ({ id: g.id, order: g.order }));
+
     // Update order in DB for ALL groups to ensure consistency
     await db.transaction('rw', db.groups, async () => {
         for (let i = 0; i < localGroups.length; i++) {
@@ -196,6 +201,16 @@ export const GroupTabs: React.FC<GroupTabsProps> = ({
             }
         }
     });
+
+    // Registrar ação para desfazer apenas se a ordem mudou
+    const orderChanged = previousOrder.some((g, i) => g.id !== localGroups[i].id);
+    if (orderChanged) {
+        pushAction({
+            type: 'reorder_groups',
+            previousState: { groupsOrder: previousOrder },
+            metadata: {},
+        });
+    }
   };
 
   // Drag-to-Scroll Handlers
