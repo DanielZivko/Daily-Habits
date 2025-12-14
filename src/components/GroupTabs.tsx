@@ -5,6 +5,7 @@ import { Plus, ChevronsLeft, ChevronsRight } from "lucide-react";
 import { getIconComponent } from "./ui/IconPicker";
 import { db } from "../db/db";
 import { Reorder, useDragControls } from "framer-motion";
+import { CalendarTab, CalendarSubTabs, type CalendarPeriod } from "./CalendarTab";
 
 // Função para determinar o nível de glow baseado na quantidade de tarefas pendentes
 const getGlowLevel = (pendingCount: number): 'none' | 'low' | 'medium' | 'high' => {
@@ -130,6 +131,13 @@ interface GroupTabsProps {
   onSelectGroup: (id: string | null) => void;
   onNewGroup: () => void;
   pendingCountByGroup: Record<string, number>;
+  isCalendarSelected: boolean;
+  onSelectCalendar: () => void;
+  selectedCalendarPeriod: CalendarPeriod;
+  onSelectCalendarPeriod: (period: CalendarPeriod) => void;
+  customStartDate?: Date;
+  customEndDate?: Date;
+  onCustomDateChange?: (startDate: Date | null, endDate: Date | null) => void;
 }
 
 export const GroupTabs: React.FC<GroupTabsProps> = ({ 
@@ -137,7 +145,14 @@ export const GroupTabs: React.FC<GroupTabsProps> = ({
   selectedGroupId, 
   onSelectGroup,
   onNewGroup,
-  pendingCountByGroup
+  pendingCountByGroup,
+  isCalendarSelected,
+  onSelectCalendar,
+  selectedCalendarPeriod,
+  onSelectCalendarPeriod,
+  customStartDate,
+  customEndDate,
+  onCustomDateChange
 }) => {
   const [localGroups, setLocalGroups] = useState<Group[]>(groups);
   
@@ -217,86 +232,113 @@ export const GroupTabs: React.FC<GroupTabsProps> = ({
   };
 
   return (
-    <div className="relative border-b border-gray-200 bg-white px-4 py-0 group-tabs-container">
-      {/* Seta Esquerda com Degradê - Estilo Clean */}
-      <div 
-        className={cn(
-          "pointer-events-none absolute left-0 top-0 z-10 flex h-full w-20 items-center justify-start bg-gradient-to-r from-white via-white/90 to-transparent pl-1 transition-opacity duration-300",
-          canScrollLeft ? "opacity-100" : "opacity-0"
-        )}
-      >
-        <button
-          onClick={() => scrollByAmount(-200)}
-          className="pointer-events-auto text-gray-300 hover:text-gray-500 transition-colors"
-          aria-label="Scroll left"
-        >
-          <ChevronsLeft size={24} strokeWidth={1.5} />
-        </button>
-      </div>
+    <div className="bg-white group-tabs-container shadow-sm">
+      <div className="flex border-b border-gray-200">
+        {/* Guia Calendário Fixa */}
+        <div className="flex-shrink-0 z-20 bg-white">
+          <CalendarTab
+            isSelected={isCalendarSelected}
+            onSelect={onSelectCalendar}
+          />
+        </div>
 
-      {/* Um único scroll horizontal: tabs + botão Novo no mesmo fluxo */}
-      <div 
-        ref={scrollRef}
-        className={cn(
-          "overflow-x-auto pb-1 scrollbar-hide", // scrollbar-hide deve funcionar se a classe estiver disponível
-          isDragging ? "cursor-grabbing" : "cursor-grab"
-        )}
-        style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }} // Forçar ocultação via style inline também
-        onMouseDown={onMouseDown}
-        onMouseLeave={onMouseLeave}
-        onMouseUp={onMouseUp}
-        onMouseMove={onMouseMove}
-        onScroll={checkScroll} // Monitorar scroll nativo
-      >
-        <div className="flex min-w-max items-center gap-6 px-6"> 
-          <Reorder.Group 
-            axis="x" 
-            values={localGroups} 
-            onReorder={handleReorder}
-            className="flex items-center gap-6"
+        {/* Área scrollável com grupos */}
+        <div className="relative flex-1 min-w-0">
+          {/* Seta Esquerda com Degradê - Estilo Clean */}
+          <div 
+            className={cn(
+              "pointer-events-none absolute left-0 top-0 z-10 flex h-full w-20 items-center justify-start bg-gradient-to-r from-white via-white/90 to-transparent pl-1 transition-opacity duration-300",
+              canScrollLeft ? "opacity-100" : "opacity-0"
+            )}
           >
-            {localGroups.map((group) => (
-              <GroupTabItem
-                key={group.id}
-                group={group}
-                isSelected={selectedGroupId === group.id}
-                onClick={() => {
-                    // Evita clique acidental se estiver arrastando (pequeno threshold)
-                    if (!isDragging) onSelectGroup(group.id);
-                }}
-                onDragEnd={handleDragEnd}
-                pendingCount={pendingCountByGroup[group.id] || 0}
-              />
-            ))}
-          </Reorder.Group>
+            <button
+              onClick={() => scrollByAmount(-200)}
+              className="pointer-events-auto text-gray-300 hover:text-gray-500 transition-colors"
+              aria-label="Scroll left"
+            >
+              <ChevronsLeft size={24} strokeWidth={1.5} />
+            </button>
+          </div>
 
-          <button
-            onClick={onNewGroup}
-            className="flex shrink-0 min-w-fit items-center gap-1 py-4 text-sm font-medium text-gray-400 hover:text-blue-500"
-            // Impedir que o clique no botão dispare o drag
-            onMouseDown={(e) => e.stopPropagation()} 
+          {/* Um único scroll horizontal: tabs + botão Novo no mesmo fluxo */}
+          <div 
+            ref={scrollRef}
+            className={cn(
+              "overflow-x-auto pb-1 scrollbar-hide h-full flex items-end", // Adicionado items-end e h-full
+              isDragging ? "cursor-grabbing" : "cursor-grab"
+            )}
+            style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }} // Forçar ocultação via style inline também
+            onMouseDown={onMouseDown}
+            onMouseLeave={onMouseLeave}
+            onMouseUp={onMouseUp}
+            onMouseMove={onMouseMove}
+            onScroll={checkScroll} // Monitorar scroll nativo
           >
-            <Plus size={16} />
-            <span className="hidden md:inline">Novo</span>
-          </button>
+            <div className="flex min-w-max items-center gap-6 px-4"> 
+              <Reorder.Group 
+                axis="x" 
+                values={localGroups} 
+                onReorder={handleReorder}
+                className="flex items-center gap-6"
+              >
+                {localGroups.map((group) => (
+                  <GroupTabItem
+                    key={group.id}
+                    group={group}
+                    isSelected={selectedGroupId === group.id}
+                    onClick={() => {
+                        // Evita clique acidental se estiver arrastando (pequeno threshold)
+                        if (!isDragging) onSelectGroup(group.id);
+                    }}
+                    onDragEnd={handleDragEnd}
+                    pendingCount={pendingCountByGroup[group.id] || 0}
+                  />
+                ))}
+              </Reorder.Group>
+
+              <button
+                onClick={onNewGroup}
+                className="flex shrink-0 min-w-fit items-center gap-1 py-4 text-sm font-medium text-gray-400 hover:text-blue-500"
+                // Impedir que o clique no botão dispare o drag
+                onMouseDown={(e) => e.stopPropagation()} 
+              >
+                <Plus size={16} />
+                <span className="hidden md:inline">Novo</span>
+              </button>
+              
+              {/* Espaçador final para garantir que o último item não fique colado no final */}
+              <div className="w-8"></div>
+            </div>
+          </div>
+
+          {/* Seta Direita com Degradê - Estilo Clean */}
+          <div 
+            className={cn(
+              "pointer-events-none absolute right-0 top-0 z-10 flex h-full w-20 items-center justify-end bg-gradient-to-l from-white via-white/90 to-transparent pr-1 transition-opacity duration-300",
+              canScrollRight ? "opacity-100" : "opacity-0"
+            )}
+          >
+            <button
+              onClick={() => scrollByAmount(200)}
+              className="pointer-events-auto text-gray-300 hover:text-gray-500 transition-colors"
+              aria-label="Scroll right"
+            >
+              <ChevronsRight size={24} strokeWidth={1.5} />
+            </button>
+          </div>
         </div>
       </div>
-
-      {/* Seta Direita com Degradê - Estilo Clean */}
-      <div 
-        className={cn(
-          "pointer-events-none absolute right-0 top-0 z-10 flex h-full w-20 items-center justify-end bg-gradient-to-l from-white via-white/90 to-transparent pr-1 transition-opacity duration-300",
-          canScrollRight ? "opacity-100" : "opacity-0"
-        )}
-      >
-        <button
-          onClick={() => scrollByAmount(200)}
-          className="pointer-events-auto text-gray-300 hover:text-gray-500 transition-colors"
-          aria-label="Scroll right"
-        >
-          <ChevronsRight size={24} strokeWidth={1.5} />
-        </button>
-      </div>
+      
+      {/* Sub-guias do Calendário (Linha separada) */}
+      {isCalendarSelected && (
+        <CalendarSubTabs 
+            selectedPeriod={selectedCalendarPeriod}
+            onSelectPeriod={onSelectCalendarPeriod}
+            customStartDate={customStartDate}
+            customEndDate={customEndDate}
+            onCustomDateChange={onCustomDateChange}
+        />
+      )}
     </div>
   );
 };

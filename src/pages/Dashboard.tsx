@@ -5,7 +5,9 @@ import type { Task, Group } from "../types";
 import { Header } from "../components/Header";
 import { GroupTabs } from "../components/GroupTabs";
 import { TaskList } from "../components/TaskList";
+import { CalendarTaskList } from "../components/CalendarTaskList";
 import { addDays, addWeeks, addMonths, addHours, addMinutes } from "date-fns";
+import type { CalendarPeriod } from "../components/CalendarTab";
 import { Pencil, Trash2, Plus } from "lucide-react";
 import { Button } from "../components/ui/Button";
 import { Modal } from "../components/ui/Modal";
@@ -58,6 +60,10 @@ export const Dashboard: React.FC = () => {
   const currentUserId = user ? user.id : 'guest';
 
   const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null);
+  const [isCalendarSelected, setIsCalendarSelected] = useState(false);
+  const [selectedCalendarPeriod, setSelectedCalendarPeriod] = useState<CalendarPeriod>('today');
+  const [customStartDate, setCustomStartDate] = useState<Date | null>(null);
+  const [customEndDate, setCustomEndDate] = useState<Date | null>(null);
   const [isTaskModalOpen, setIsTaskModalOpen] = useState(false);
   const [isGroupModalOpen, setIsGroupModalOpen] = useState(false);
   const [editingTask, setEditingTask] = useState<Task | null>(null);
@@ -113,14 +119,25 @@ export const Dashboard: React.FC = () => {
     [selectedGroupId, groups, currentUserId]
   );
 
-  // Set initial group selection
+  // Set initial group selection (only if calendar is not selected)
   React.useEffect(() => {
-      if (!selectedGroupId && groups && groups.length > 0) {
+      if (!isCalendarSelected && !selectedGroupId && groups && groups.length > 0) {
           setSelectedGroupId(groups[0].id);
       } else if (groups && groups.length === 0) {
         setSelectedGroupId(null);
       }
-  }, [groups, selectedGroupId]);
+  }, [groups, selectedGroupId, isCalendarSelected]);
+
+  // Handlers para seleção de guia
+  const handleSelectGroup = (id: string | null) => {
+    setSelectedGroupId(id);
+    setIsCalendarSelected(false);
+  };
+
+  const handleSelectCalendar = () => {
+    setIsCalendarSelected(true);
+    setSelectedGroupId(null);
+  };
 
   const selectedGroup = groups?.find(g => g.id === selectedGroupId);
   // Contagem de pendentes do grupo selecionado (apenas tarefas vencidas de imediatas/recorrentes)
@@ -415,69 +432,103 @@ export const Dashboard: React.FC = () => {
       <GroupTabs 
         groups={groups || []} 
         selectedGroupId={selectedGroupId} 
-        onSelectGroup={setSelectedGroupId}
+        onSelectGroup={handleSelectGroup}
         onNewGroup={handleCreateGroup}
         pendingCountByGroup={pendingCountByGroup}
+        isCalendarSelected={isCalendarSelected}
+        onSelectCalendar={handleSelectCalendar}
+        selectedCalendarPeriod={selectedCalendarPeriod}
+        onSelectCalendarPeriod={setSelectedCalendarPeriod}
+        customStartDate={customStartDate || undefined}
+        customEndDate={customEndDate || undefined}
+        onCustomDateChange={(start, end) => {
+          setCustomStartDate(start);
+          setCustomEndDate(end);
+        }}
       />
 
       <main className="mx-auto max-w-5xl px-4 py-4 md:px-8">
-        {/* Group Header */}
-        <div className="mb-4 flex items-start justify-between">
-          <div>
-            <div className="flex items-center gap-3">
-                <button 
-                    onClick={handleCreateTask}
-                    className="flex h-12 w-12 items-center justify-center rounded-xl text-white shadow-md transition-transform hover:scale-105 active:scale-95"
-                    style={{ backgroundColor: selectedGroup?.color || '#3b82f6' }}
-                    aria-label="Criar nova tarefa"
-                >
-                     <SelectedGroupIcon className="h-6 w-6" /> 
-                </button>
-                <div>
-                    <h2 className="text-2xl font-bold text-gray-900">
-                    {selectedGroup ? selectedGroup.title : 'Bem-vindo'}
-                    </h2>
-                    <p className="text-gray-500">
-                    {selectedGroup ? (
-                        <><span className="font-medium text-blue-600">{pendingCount} tarefas pendentes</span></>
-                    ) : (
-                        "Selecione ou crie um grupo para começar"
-                    )}
-                    </p>
-                </div>
+        {isCalendarSelected ? (
+          /* Vista Calendário */
+          <>
+            <div className="mb-4">
+              <h2 className="text-2xl font-bold text-gray-900">Calendário</h2>
+              <p className="text-gray-500">Tarefas organizadas por período</p>
             </div>
-          </div>
-          
-          <div className="flex gap-3">
-             <Button 
-                variant="ghost" 
-                className="text-gray-500 gap-2"
-                onClick={() => selectedGroup && handleEditGroup(selectedGroup)}
-                disabled={!selectedGroup}
-             >
-                <Pencil size={16} />
-                <span className="hidden md:inline">Editar</span>
-             </Button>
-             <Button 
-                variant="danger" 
-                className="bg-red-50 text-red-600 hover:bg-red-100 gap-2"
-                onClick={() => selectedGroup && handleDeleteGroup(selectedGroup)}
-                disabled={!selectedGroup}
-             >
-                <Trash2 size={16} />
-                <span className="hidden md:inline">Excluir</span>
-             </Button>
-          </div>
-        </div>
-
-        {selectedGroup && (
-            <TaskList 
-                tasks={tasks || []} 
-                onToggle={handleToggleTask}
-                onEdit={handleEditTask}
-                onDuplicate={handleDuplicateTask}
-                onDelete={handleDeleteTask}
+            <CalendarTaskList
+              tasks={allTasks || []}
+              groups={groups || []}
+              period={selectedCalendarPeriod}
+              customStartDate={customStartDate || undefined}
+              customEndDate={customEndDate || undefined}
+              onToggle={handleToggleTask}
+              onEdit={handleEditTask}
+              onDuplicate={handleDuplicateTask}
+              onDelete={handleDeleteTask}
             />
+          </>
+        ) : (
+          /* Vista de Grupo */
+          <>
+            {/* Group Header */}
+            <div className="mb-4 flex items-start justify-between">
+              <div>
+                <div className="flex items-center gap-3">
+                    <button 
+                        onClick={handleCreateTask}
+                        className="flex h-12 w-12 items-center justify-center rounded-xl text-white shadow-md transition-transform hover:scale-105 active:scale-95"
+                        style={{ backgroundColor: selectedGroup?.color || '#3b82f6' }}
+                        aria-label="Criar nova tarefa"
+                    >
+                         <SelectedGroupIcon className="h-6 w-6" /> 
+                    </button>
+                    <div>
+                        <h2 className="text-2xl font-bold text-gray-900">
+                        {selectedGroup ? selectedGroup.title : 'Bem-vindo'}
+                        </h2>
+                        <p className="text-gray-500">
+                        {selectedGroup ? (
+                            <><span className="font-medium text-blue-600">{pendingCount} tarefas pendentes</span></>
+                        ) : (
+                            "Selecione ou crie um grupo para começar"
+                        )}
+                        </p>
+                    </div>
+                </div>
+              </div>
+              
+              <div className="flex gap-3">
+                 <Button 
+                    variant="ghost" 
+                    className="text-gray-500 gap-2"
+                    onClick={() => selectedGroup && handleEditGroup(selectedGroup)}
+                    disabled={!selectedGroup}
+                 >
+                    <Pencil size={16} />
+                    <span className="hidden md:inline">Editar</span>
+                 </Button>
+                 <Button 
+                    variant="danger" 
+                    className="bg-red-50 text-red-600 hover:bg-red-100 gap-2"
+                    onClick={() => selectedGroup && handleDeleteGroup(selectedGroup)}
+                    disabled={!selectedGroup}
+                 >
+                    <Trash2 size={16} />
+                    <span className="hidden md:inline">Excluir</span>
+                 </Button>
+              </div>
+            </div>
+
+            {selectedGroup && (
+                <TaskList 
+                    tasks={tasks || []} 
+                    onToggle={handleToggleTask}
+                    onEdit={handleEditTask}
+                    onDuplicate={handleDuplicateTask}
+                    onDelete={handleDeleteTask}
+                />
+            )}
+          </>
         )}
         
       </main>

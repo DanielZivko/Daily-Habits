@@ -45,9 +45,10 @@ interface TaskItemProps {
   isExpanded: boolean;
   onToggleExpand: () => void;
   isInCompletedList?: boolean; // Se está na lista de tarefas concluídas
+  occurrenceCount?: number; // Quantidade de ocorrências no período (para tarefas recorrentes)
 }
 
-export const TaskItem: React.FC<TaskItemProps> = ({ task, onToggle, onEdit, onDuplicate, onDelete, isExpanded, onToggleExpand, isInCompletedList = false }) => {
+export const TaskItem: React.FC<TaskItemProps> = ({ task, onToggle, onEdit, onDuplicate, onDelete, isExpanded, onToggleExpand, isInCompletedList = false, occurrenceCount }) => {
   const [isHovered, setIsHovered] = React.useState(false);
   const [progress, setProgress] = useState(0);
   
@@ -220,7 +221,8 @@ export const TaskItem: React.FC<TaskItemProps> = ({ task, onToggle, onEdit, onDu
         onClick={onToggleExpand}
         className={cn(
           "group flex flex-col rounded-lg border border-gray-100 bg-white shadow-sm transition-all hover:shadow-md cursor-pointer",
-          isCompact ? "px-2 py-1.5" : "px-3 py-2.5",
+          isCompact ? "px-2 py-1.5 border-l-[3px]" : "px-3 py-2.5 border-l-[4px]",
+          "border-l-yellow-500",
           task.status && "opacity-60 bg-gray-50"
         )}
         onMouseEnter={() => setIsHovered(true)}
@@ -236,13 +238,23 @@ export const TaskItem: React.FC<TaskItemProps> = ({ task, onToggle, onEdit, onDu
                 />
             </div>
             <div>
-                <h3 className={cn(
-                  "font-medium text-gray-900",
-                  isCompact ? "text-xs" : "text-sm",
-                  task.status && "line-through text-gray-500"
-                )}>
-                {task.title}
-                </h3>
+                <div className="flex items-center gap-2">
+                  <h3 className={cn(
+                    "font-medium text-gray-900",
+                    isCompact ? "text-xs" : "text-sm",
+                    task.status && "line-through text-gray-500"
+                  )}>
+                    {task.title}
+                  </h3>
+                  {occurrenceCount !== undefined && occurrenceCount > 1 && (
+                    <span className={cn(
+                      "rounded-full bg-blue-100 text-blue-700 font-semibold",
+                      isCompact ? "text-[8px] px-1.5 py-0" : "text-[10px] px-2 py-0.5"
+                    )}>
+                      {occurrenceCount}x
+                    </span>
+                  )}
+                </div>
                 <div className={cn(
                   "flex flex-wrap gap-1.5 items-center",
                   isCompact ? "text-[8px] mt-0" : "text-[10px] mt-0.5"
@@ -297,7 +309,8 @@ export const TaskItem: React.FC<TaskItemProps> = ({ task, onToggle, onEdit, onDu
         onClick={onToggleExpand}
         className={cn(
           "group relative rounded-lg border border-gray-100 bg-white shadow-sm transition-all hover:shadow-md cursor-pointer",
-          isCompact ? "px-2 py-1.5" : "px-3 py-2.5"
+          isCompact ? "px-2 py-1.5 border-l-[3px]" : "px-3 py-2.5 border-l-[4px]",
+          "border-l-blue-500"
         )}
         onMouseEnter={() => setIsHovered(true)}
         onMouseLeave={() => setIsHovered(false)}
@@ -313,7 +326,17 @@ export const TaskItem: React.FC<TaskItemProps> = ({ task, onToggle, onEdit, onDu
                             checkSize={checkboxSize}
                         />
                     </div>
-                    <h3 className={cn("font-medium text-gray-900", isCompact ? "text-xs" : "text-sm")}>{task.title}</h3>
+                    <div className="flex items-center gap-2">
+                      <h3 className={cn("font-medium text-gray-900", isCompact ? "text-xs" : "text-sm")}>{task.title}</h3>
+                      {occurrenceCount !== undefined && occurrenceCount > 1 && (
+                        <span className={cn(
+                          "rounded-full bg-blue-100 text-blue-700 font-semibold",
+                          isCompact ? "text-[8px] px-1.5 py-0" : "text-[10px] px-2 py-0.5"
+                        )}>
+                          {occurrenceCount}x
+                        </span>
+                      )}
+                    </div>
                 </div>
                 
                 <div className={cn("flex items-center", isCompact ? "gap-2" : "gap-3")}>
@@ -378,7 +401,17 @@ export const TaskItem: React.FC<TaskItemProps> = ({ task, onToggle, onEdit, onDu
                             checkSize={checkboxSize}
                         />
                     </div>
-                    <h3 className={cn("font-medium text-gray-900", isCompact ? "text-xs" : "text-sm")}>{task.title}</h3>
+                    <div className="flex items-center gap-2">
+                      <h3 className={cn("font-medium text-gray-900", isCompact ? "text-xs" : "text-sm")}>{task.title}</h3>
+                      {occurrenceCount !== undefined && occurrenceCount > 1 && (
+                        <span className={cn(
+                          "rounded-full bg-blue-100 text-blue-700 font-semibold",
+                          isCompact ? "text-[8px] px-1.5 py-0" : "text-[10px] px-2 py-0.5"
+                        )}>
+                          {occurrenceCount}x
+                        </span>
+                      )}
+                    </div>
                 </div>
 
                 <div className={cn("flex items-center", isCompact ? "gap-2" : "gap-3")}>
