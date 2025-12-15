@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import type { Task } from "../types";
 import { TaskItem } from "./TaskItem";
-import { AlertCircle, RotateCw, Flag, CheckCircle2, ChevronDown } from "lucide-react";
+import { AlertCircle, RotateCw, Flag, CheckCircle2, ChevronDown, PauseCircle } from "lucide-react";
 import { db } from "../db/db";
 import { Reorder, useDragControls } from "framer-motion";
 import { cn } from "../lib/utils";
@@ -12,6 +12,7 @@ interface TaskListProps {
   onEdit: (task: Task) => void;
   onDuplicate: (task: Task) => void;
   onDelete: (task: Task) => void;
+  onUpdate?: (task: Task) => void;
 }
 
 interface SortableObjectiveItemProps {
@@ -20,13 +21,14 @@ interface SortableObjectiveItemProps {
   onEdit: (task: Task) => void;
   onDuplicate: (task: Task) => void;
   onDelete: (task: Task) => void;
+  onUpdate?: (task: Task) => void;
   isExpanded: boolean;
   onToggleExpand: () => void;
   onDragEnd: () => void;
 }
 
 const SortableObjectiveItem: React.FC<SortableObjectiveItemProps> = ({ 
-    task, onToggle, onEdit, onDuplicate, onDelete, isExpanded, onToggleExpand, onDragEnd 
+    task, onToggle, onEdit, onDuplicate, onDelete, onUpdate, isExpanded, onToggleExpand, onDragEnd 
 }) => {
   const controls = useDragControls();
   const [isPressing, setIsPressing] = useState(false);
@@ -89,6 +91,7 @@ const SortableObjectiveItem: React.FC<SortableObjectiveItemProps> = ({
           onEdit={onEdit} 
           onDuplicate={onDuplicate}
           onDelete={onDelete}
+          onUpdate={onUpdate}
           isExpanded={isExpanded}
           onToggleExpand={onToggleExpand}
         />
@@ -166,18 +169,22 @@ const sortTasksByUrgency = (tasks: Task[], type: 'immediate' | 'recurrent' | 'ob
   });
 };
 
-export const TaskList: React.FC<TaskListProps> = ({ tasks, onToggle, onEdit, onDuplicate, onDelete }) => {
+export const TaskList: React.FC<TaskListProps> = ({ tasks, onToggle, onEdit, onDuplicate, onDelete, onUpdate }) => {
   const [expandedTaskId, setExpandedTaskId] = useState<string | null>(null);
   const [localObjectives, setLocalObjectives] = useState<Task[]>([]);
   const [isCompletedExpanded, setIsCompletedExpanded] = useState(false);
+  const [isSuspendedExpanded, setIsSuspendedExpanded] = useState(false);
   
-  const allImmediateTasks = tasks.filter(t => t.type === 'immediate');
+  const suspendedTasks = tasks.filter(t => t.isSuspended);
+  const activeTasks = tasks.filter(t => !t.isSuspended);
+  
+  const allImmediateTasks = activeTasks.filter(t => t.type === 'immediate');
   const immediateTasks = sortTasksByUrgency(allImmediateTasks.filter(t => !t.status), 'immediate');
   const completedImmediateTasks = sortTasksByUrgency(allImmediateTasks.filter(t => t.status), 'immediate');
-  const recurrentTasks = sortTasksByUrgency(tasks.filter(t => t.type === 'recurrent'), 'recurrent');
+  const recurrentTasks = sortTasksByUrgency(activeTasks.filter(t => t.type === 'recurrent'), 'recurrent');
 
   useEffect(() => {
-    const objectives = sortTasksByUrgency(tasks.filter(t => t.type === 'objective'), 'objective');
+    const objectives = sortTasksByUrgency(activeTasks.filter(t => t.type === 'objective'), 'objective');
     setLocalObjectives(objectives);
   }, [tasks]);
 
@@ -219,6 +226,7 @@ export const TaskList: React.FC<TaskListProps> = ({ tasks, onToggle, onEdit, onD
                 onEdit={onEdit} 
                 onDuplicate={onDuplicate}
                 onDelete={onDelete} 
+                onUpdate={onUpdate}
                 isExpanded={expandedTaskId === task.id}
                 onToggleExpand={() => handleToggleExpand(task.id)}
               />
@@ -256,6 +264,7 @@ export const TaskList: React.FC<TaskListProps> = ({ tasks, onToggle, onEdit, onD
                       onEdit={onEdit} 
                       onDuplicate={onDuplicate}
                       onDelete={onDelete} 
+                      onUpdate={onUpdate}
                       isExpanded={expandedTaskId === task.id}
                       onToggleExpand={() => handleToggleExpand(task.id)}
                       isInCompletedList={true}
@@ -283,6 +292,7 @@ export const TaskList: React.FC<TaskListProps> = ({ tasks, onToggle, onEdit, onD
                 onEdit={onEdit} 
                 onDuplicate={onDuplicate}
                 onDelete={onDelete}
+                onUpdate={onUpdate}
                 isExpanded={expandedTaskId === task.id}
                 onToggleExpand={() => handleToggleExpand(task.id)}
               />
@@ -311,6 +321,7 @@ export const TaskList: React.FC<TaskListProps> = ({ tasks, onToggle, onEdit, onD
                 onEdit={onEdit}
                 onDuplicate={onDuplicate}
                 onDelete={onDelete}
+                onUpdate={onUpdate}
                 isExpanded={expandedTaskId === task.id}
                 onToggleExpand={() => handleToggleExpand(task.id)}
                 onDragEnd={handleDragEnd}
@@ -318,6 +329,48 @@ export const TaskList: React.FC<TaskListProps> = ({ tasks, onToggle, onEdit, onD
             ))}
           </Reorder.Group>
         </section>
+      )}
+
+      {/* Seção de Tarefas Suspensas */}
+      {suspendedTasks.length > 0 && (
+        <div className="mt-8 border-t border-gray-100 pt-4">
+          <button
+            onClick={() => setIsSuspendedExpanded(!isSuspendedExpanded)}
+            className="flex w-full items-center gap-2 rounded-lg bg-gray-50 px-3 py-2 text-sm font-medium text-gray-500 transition-colors hover:bg-gray-100"
+          >
+            <PauseCircle className="text-gray-400" size={16} />
+            <span>Suspensas ({suspendedTasks.length})</span>
+            <ChevronDown 
+              size={16} 
+              className={cn(
+                "ml-auto transition-transform duration-200",
+                isSuspendedExpanded && "rotate-180"
+              )} 
+            />
+          </button>
+          
+          <div className={cn(
+            "overflow-hidden transition-all duration-300 ease-in-out",
+            isSuspendedExpanded ? "max-h-[2000px] opacity-100 mt-2" : "max-h-0 opacity-0"
+          )}>
+            <div className="space-y-2">
+              {suspendedTasks.map(task => (
+                <TaskItem 
+                  key={task.id} 
+                  task={task} 
+                  onToggle={onToggle} 
+                  onEdit={onEdit} 
+                  onDuplicate={onDuplicate}
+                  onDelete={onDelete} 
+                  onUpdate={onUpdate}
+                  isExpanded={expandedTaskId === task.id}
+                  onToggleExpand={() => handleToggleExpand(task.id)}
+                  isSuspended={true}
+                />
+              ))}
+            </div>
+          </div>
+        </div>
       )}
 
       {tasks.length === 0 && (

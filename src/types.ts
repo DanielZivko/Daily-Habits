@@ -41,6 +41,10 @@ export interface Task {
     target?: string; // Meta (opcional)
   }[];
 
+  // Suspension fields
+  isSuspended?: boolean;
+  suspendedUntil?: Date;
+
   // Legacy/Seeding fields (Optional to prevent build errors)
   currentProgress?: number;
   targetProgress?: number;

@@ -1,10 +1,11 @@
 import React, { useEffect, useState } from "react";
 import type { Task } from "../types";
 import { cn } from "../lib/utils";
+import { RichTextDisplay } from "./ui/RichTextDisplay";
 import { Checkbox } from "./ui/Checkbox";
 import { ProgressBar } from "./ui/ProgressBar";
 import { TaskStatisticsChart } from "./TaskStatisticsChart";
-import { Pencil, Trash2, Flag, Copy } from "lucide-react";
+import { Pencil, Trash2, Flag, Copy, PlayCircle, Calendar } from "lucide-react";
 import { format, differenceInMilliseconds, formatDistanceToNow, differenceInDays, addMinutes, addHours, addDays, addWeeks, addMonths } from "date-fns";
 import { ptBR } from "date-fns/locale";
 
@@ -42,13 +43,16 @@ interface TaskItemProps {
   onEdit: (task: Task) => void;
   onDuplicate: (task: Task) => void;
   onDelete: (task: Task) => void;
+  // Add onUpdate prop to handle silent updates
+  onUpdate?: (task: Task) => void;
   isExpanded: boolean;
   onToggleExpand: () => void;
   isInCompletedList?: boolean; // Se está na lista de tarefas concluídas
+  isSuspended?: boolean; // Se está na lista de suspensas
   occurrenceCount?: number; // Quantidade de ocorrências no período (para tarefas recorrentes)
 }
 
-export const TaskItem: React.FC<TaskItemProps> = ({ task, onToggle, onEdit, onDuplicate, onDelete, isExpanded, onToggleExpand, isInCompletedList = false, occurrenceCount }) => {
+export const TaskItem: React.FC<TaskItemProps> = ({ task, onToggle, onEdit, onDuplicate, onDelete, onUpdate, isExpanded, onToggleExpand, isInCompletedList = false, isSuspended = false, occurrenceCount }) => {
   const [isHovered, setIsHovered] = React.useState(false);
   const [progress, setProgress] = useState(0);
   
@@ -58,9 +62,10 @@ export const TaskItem: React.FC<TaskItemProps> = ({ task, onToggle, onEdit, onDu
   
   // Determina o tamanho do checkbox:
   // - Cards na lista de concluídas: sm
+  // - Cards suspensos: sm
   // - Cards encolhidos: md
   // - Cards normais: lg
-  const checkboxSize = isInCompletedList ? "sm" : (isCompact ? "md" : "lg");
+  const checkboxSize = (isInCompletedList || isSuspended) ? "sm" : (isCompact ? "md" : "lg");
 
   // Calcula a duração fixa do intervalo de recorrência em milissegundos
   const getRecurrenceIntervalMs = (frequency: string, interval: number): number => {
@@ -103,7 +108,23 @@ export const TaskItem: React.FC<TaskItemProps> = ({ task, onToggle, onEdit, onDu
     return () => clearInterval(timer);
   }, [task]);
 
-  const renderActions = () => (
+  const renderActions = () => {
+    // Se suspenso, mostra botão de reativar em vez de editar/duplicar
+    if (isSuspended) {
+      return (
+        <div className="flex gap-1 items-center">
+            <button
+                onClick={(e) => { e.stopPropagation(); onDelete(task); }} // Abre modal de ação
+                className="text-gray-400 hover:text-red-500 rounded p-1 hover:bg-gray-100"
+                title="Gerenciar"
+            >
+                <Trash2 size={14} />
+            </button>
+        </div>
+      );
+    }
+
+    return (
     <div className={cn("flex gap-0.5 transition-opacity", isHovered ? "opacity-100" : "opacity-0 md:opacity-0")}>
       <button 
         onClick={(e) => { e.stopPropagation(); onEdit(task); }}
@@ -125,7 +146,7 @@ export const TaskItem: React.FC<TaskItemProps> = ({ task, onToggle, onEdit, onDu
         <Trash2 size={isCompact ? 12 : 14} />
       </button>
     </div>
-  );
+  )};
 
   const getProgressColor = (percent: number) => {
     if (percent >= 100) return "bg-red-900 animate-pulse shadow-[0_0_10px_rgba(153,27,27,0.7)]"; // Vermelho escuro pulsante
@@ -222,30 +243,72 @@ export const TaskItem: React.FC<TaskItemProps> = ({ task, onToggle, onEdit, onDu
         className={cn(
           "group flex flex-col rounded-lg border border-gray-100 bg-white shadow-sm transition-all hover:shadow-md cursor-pointer",
           isCompact ? "px-2 py-1.5 border-l-[3px]" : "px-3 py-2.5 border-l-[4px]",
-          "border-l-yellow-500",
-          task.status && "opacity-60 bg-gray-50"
+          isSuspended ? "border-l-gray-400 opacity-70 bg-gray-50/50 grayscale" : "border-l-yellow-500",
+          task.status && !isSuspended && "opacity-60 bg-gray-50"
         )}
         onMouseEnter={() => setIsHovered(true)}
         onMouseLeave={() => setIsHovered(false)}
       >
         <div className="flex items-center justify-between w-full">
             <div className={cn("flex items-center", isCompact ? "gap-2" : "gap-3")}>
-            <div onClick={(e) => e.stopPropagation()}>
-                <Checkbox 
-                    checked={task.status} 
-                    onCheckedChange={() => onToggle(task)}
-                    checkSize={checkboxSize}
-                />
+            <div onClick={(e) => {
+                e.stopPropagation();
+                if (isSuspended) {
+                    // Reativar (onDelete neste contexto abre o modal que poderia ser usado, mas aqui queremos reativar direto ou via toggle)
+                    // Na verdade, o ideal seria uma prop onRestore, mas vamos usar onToggle se isSuspended for true para reativar
+                    // Como não alteramos onToggle ainda, vamos assumir que o pai cuidará disso ou usaremos um botão específico.
+                    // Para simplificar: Checkbox desabilitado ou muda ícone se suspenso.
+                    // Plano diz: "Ao clicar no checkbox (ou botão de restaurar), reativar a tarefa"
+                    // Vamos implementar handleRestore no Dashboard depois se necessário, mas o plano diz reativar.
+                    // Se clicarmos no checkbox de uma suspensa, ela deve voltar.
+                    // O checkbox atual só muda status. Precisamos de lógica no Dashboard para identificar que é reativação?
+                    // Não, o melhor é um botão explicito de "Restaurar" no lugar do checkbox se suspenso.
+                } 
+            }}>
+                {isSuspended ? (
+                   <button 
+                     onClick={(e) => {
+                        e.stopPropagation();
+                        // Hack: usar onToggle para reativar se mudarmos a lógica lá, ou criar prop nova.
+                        // Como o plano não especificou criar onRestore, vamos assumir que o usuário quer que a tarefa volte.
+                        // Mas o onToggle espera Task. Vamos modificar o onToggle no Dashboard para lidar com isso?
+                        // Ou melhor: adicionar um botão de play/restaurar e usar onToggle (que inverte status) talvez não seja o ideal para "des-suspender".
+                        // Vamos adicionar uma prop opcional onRestore ou usar onEdit para isso?
+                        // O plano diz: "Ao clicar no checkbox ... reativar".
+                        // Se usarmos onToggle, o Dashboard precisa saber que deve remover isSuspended.
+                        onToggle(task); 
+                     }}
+                     className="text-gray-400 hover:text-blue-500 transition-colors"
+                     title="Reativar tarefa"
+                   >
+                     <PlayCircle size={checkboxSize === 'sm' ? 18 : 22} />
+                   </button>
+                ) : (
+                    <Checkbox 
+                        checked={task.status} 
+                        onCheckedChange={() => onToggle(task)}
+                        checkSize={checkboxSize}
+                    />
+                )}
             </div>
             <div>
                 <div className="flex items-center gap-2">
                   <h3 className={cn(
                     "font-medium text-gray-900",
                     isCompact ? "text-xs" : "text-sm",
-                    task.status && "line-through text-gray-500"
+                    task.status && !isSuspended && "line-through text-gray-500"
                   )}>
                     {task.title}
                   </h3>
+                  {isSuspended && task.suspendedUntil && (
+                    <span className={cn(
+                        "flex items-center gap-1 rounded bg-gray-100 px-1.5 py-0.5 text-gray-600 font-medium",
+                        isCompact ? "text-[8px]" : "text-[10px]"
+                    )}>
+                        <Calendar size={10} />
+                        Até {format(new Date(task.suspendedUntil), "dd/MM", { locale: ptBR })}
+                    </span>
+                  )}
                   {occurrenceCount !== undefined && occurrenceCount > 1 && (
                     <span className={cn(
                       "rounded-full bg-blue-100 text-blue-700 font-semibold",
@@ -259,7 +322,7 @@ export const TaskItem: React.FC<TaskItemProps> = ({ task, onToggle, onEdit, onDu
                   "flex flex-wrap gap-1.5 items-center",
                   isCompact ? "text-[8px] mt-0" : "text-[10px] mt-0.5"
                 )}>
-                {task.deadline && (
+                {task.deadline && !isSuspended && (
                     <span className={cn(
                         "flex items-center gap-0.5 rounded font-medium border",
                         isCompact ? "px-1 py-0" : "px-1.5 py-0.5",
@@ -291,11 +354,29 @@ export const TaskItem: React.FC<TaskItemProps> = ({ task, onToggle, onEdit, onDu
         </div>
         
         {/* Description Accordion */}
-        <div className={cn(
-            "overflow-hidden transition-all duration-300 ease-in-out",
+        <div 
+            onClick={(e) => e.stopPropagation()}
+            onMouseDown={(e) => e.stopPropagation()}
+            className={cn(
+            "overflow-hidden transition-all duration-300 ease-in-out cursor-text",
             isExpanded ? "max-h-[2000px] opacity-100 mt-2" : "max-h-0 opacity-0"
         )}>
-             {task.description && <p className="text-xs text-gray-500 border-t border-gray-100 pt-2 whitespace-pre-wrap">{task.description}</p>}
+             {task.description && (
+               <div className="border-t border-gray-100 pt-2">
+                 <RichTextDisplay 
+                    content={task.description} 
+                    className="text-xs text-gray-500" 
+                    onCheckboxChange={(newContent) => {
+                        // Use onUpdate if available for silent update, otherwise fallback to onEdit (which might open modal)
+                        if (onUpdate) {
+                            onUpdate({ ...task, description: newContent });
+                        } else {
+                            onEdit({ ...task, description: newContent });
+                        }
+                    }}
+                 />
+               </div>
+             )}
              <TaskStatisticsChart taskId={task.id} enabled={isExpanded} />
         </div>
       </div>
@@ -310,7 +391,7 @@ export const TaskItem: React.FC<TaskItemProps> = ({ task, onToggle, onEdit, onDu
         className={cn(
           "group relative rounded-lg border border-gray-100 bg-white shadow-sm transition-all hover:shadow-md cursor-pointer",
           isCompact ? "px-2 py-1.5 border-l-[3px]" : "px-3 py-2.5 border-l-[4px]",
-          "border-l-blue-500"
+          isSuspended ? "border-l-gray-400 opacity-70 bg-gray-50/50 grayscale" : "border-l-blue-500"
         )}
         onMouseEnter={() => setIsHovered(true)}
         onMouseLeave={() => setIsHovered(false)}
@@ -320,14 +401,33 @@ export const TaskItem: React.FC<TaskItemProps> = ({ task, onToggle, onEdit, onDu
             <div className="flex items-center justify-between w-full">
                 <div className={cn("flex items-center", isCompact ? "gap-2" : "gap-3")}>
                     <div onClick={(e) => e.stopPropagation()}>
-                        <Checkbox 
-                            checked={false} 
-                            onCheckedChange={() => onToggle(task)}
-                            checkSize={checkboxSize}
-                        />
+                        {isSuspended ? (
+                           <button 
+                             onClick={(e) => { e.stopPropagation(); onToggle(task); }}
+                             className="text-gray-400 hover:text-blue-500 transition-colors"
+                             title="Reativar tarefa"
+                           >
+                             <PlayCircle size={checkboxSize === 'sm' ? 18 : 22} />
+                           </button>
+                        ) : (
+                            <Checkbox 
+                                checked={false} 
+                                onCheckedChange={() => onToggle(task)}
+                                checkSize={checkboxSize}
+                            />
+                        )}
                     </div>
                     <div className="flex items-center gap-2">
                       <h3 className={cn("font-medium text-gray-900", isCompact ? "text-xs" : "text-sm")}>{task.title}</h3>
+                      {isSuspended && task.suspendedUntil && (
+                        <span className={cn(
+                            "flex items-center gap-1 rounded bg-gray-100 px-1.5 py-0.5 text-gray-600 font-medium",
+                            isCompact ? "text-[8px]" : "text-[10px]"
+                        )}>
+                            <Calendar size={10} />
+                            Até {format(new Date(task.suspendedUntil), "dd/MM", { locale: ptBR })}
+                        </span>
+                      )}
                       {occurrenceCount !== undefined && occurrenceCount > 1 && (
                         <span className={cn(
                           "rounded-full bg-blue-100 text-blue-700 font-semibold",
@@ -341,7 +441,7 @@ export const TaskItem: React.FC<TaskItemProps> = ({ task, onToggle, onEdit, onDu
                 
                 <div className={cn("flex items-center", isCompact ? "gap-2" : "gap-3")}>
                     <span className={cn("text-gray-400 whitespace-nowrap", isCompact ? "text-[8px]" : "text-[10px]")}>
-                    {getStatusText()}
+                    {!isSuspended && getStatusText()}
                     </span>
                     {renderActions()}
                 </div>
@@ -351,19 +451,39 @@ export const TaskItem: React.FC<TaskItemProps> = ({ task, onToggle, onEdit, onDu
             {renderMeasures()}
         </div>
 
-        <ProgressBar 
-            current={progress} 
-            max={100} 
-            className={cn("mt-1.5", isCompact ? "h-0.5" : "h-1")}
-            colorClass={getProgressColor(progress)}
-        />
+        {!isSuspended && (
+            <ProgressBar 
+                current={progress} 
+                max={100} 
+                className={cn("mt-1.5", isCompact ? "h-0.5" : "h-1")}
+                colorClass={getProgressColor(progress)}
+            />
+        )}
         
         {/* Description Accordion */}
-        <div className={cn(
-            "overflow-hidden transition-all duration-300 ease-in-out",
+        <div 
+            onClick={(e) => e.stopPropagation()}
+            onMouseDown={(e) => e.stopPropagation()}
+            className={cn(
+            "overflow-hidden transition-all duration-300 ease-in-out cursor-text",
             isExpanded ? "max-h-[2000px] opacity-100 mt-2" : "max-h-0 opacity-0"
         )}>
-             {task.description && <div className="text-xs text-gray-500 border-t border-gray-100 pt-2 whitespace-pre-wrap">{task.description}</div>}
+             {task.description && (
+               <div className="border-t border-gray-100 pt-2">
+                 <RichTextDisplay 
+                    content={task.description} 
+                    className="text-xs text-gray-500" 
+                    onCheckboxChange={(newContent) => {
+                        // Use onUpdate if available for silent update, otherwise fallback to onEdit (which might open modal)
+                        if (onUpdate) {
+                            onUpdate({ ...task, description: newContent });
+                        } else {
+                            onEdit({ ...task, description: newContent });
+                        }
+                    }}
+                 />
+               </div>
+             )}
              <TaskStatisticsChart taskId={task.id} enabled={isExpanded} />
         </div>
       </div>
@@ -385,7 +505,7 @@ export const TaskItem: React.FC<TaskItemProps> = ({ task, onToggle, onEdit, onDu
         className={cn(
           "group relative flex flex-col rounded-lg border border-gray-100 bg-white shadow-sm transition-all hover:shadow-md cursor-pointer",
           isCompact ? "px-2 py-1.5 border-l-[3px]" : "px-3 py-2.5 border-l-[4px]",
-          borderColor
+          isSuspended ? "border-l-gray-400 opacity-70 bg-gray-50/50 grayscale" : borderColor
         )}
         onMouseEnter={() => setIsHovered(true)}
         onMouseLeave={() => setIsHovered(false)}
@@ -395,14 +515,33 @@ export const TaskItem: React.FC<TaskItemProps> = ({ task, onToggle, onEdit, onDu
             <div className="flex items-center justify-between w-full">
                 <div className={cn("flex items-center", isCompact ? "gap-2" : "gap-3")}>
                     <div onClick={(e) => e.stopPropagation()}>
-                        <Checkbox 
-                            checked={task.status} 
-                            onCheckedChange={() => onToggle(task)}
-                            checkSize={checkboxSize}
-                        />
+                        {isSuspended ? (
+                           <button 
+                             onClick={(e) => { e.stopPropagation(); onToggle(task); }}
+                             className="text-gray-400 hover:text-blue-500 transition-colors"
+                             title="Reativar tarefa"
+                           >
+                             <PlayCircle size={checkboxSize === 'sm' ? 18 : 22} />
+                           </button>
+                        ) : (
+                            <Checkbox 
+                                checked={task.status} 
+                                onCheckedChange={() => onToggle(task)}
+                                checkSize={checkboxSize}
+                            />
+                        )}
                     </div>
                     <div className="flex items-center gap-2">
                       <h3 className={cn("font-medium text-gray-900", isCompact ? "text-xs" : "text-sm")}>{task.title}</h3>
+                      {isSuspended && task.suspendedUntil && (
+                        <span className={cn(
+                            "flex items-center gap-1 rounded bg-gray-100 px-1.5 py-0.5 text-gray-600 font-medium",
+                            isCompact ? "text-[8px]" : "text-[10px]"
+                        )}>
+                            <Calendar size={10} />
+                            Até {format(new Date(task.suspendedUntil), "dd/MM", { locale: ptBR })}
+                        </span>
+                      )}
                       {occurrenceCount !== undefined && occurrenceCount > 1 && (
                         <span className={cn(
                           "rounded-full bg-blue-100 text-blue-700 font-semibold",
@@ -415,7 +554,7 @@ export const TaskItem: React.FC<TaskItemProps> = ({ task, onToggle, onEdit, onDu
                 </div>
 
                 <div className={cn("flex items-center", isCompact ? "gap-2" : "gap-3")}>
-                    {task.lastCompletedDate && (
+                    {task.lastCompletedDate && !isSuspended && (
                         <div className={cn("text-gray-400 whitespace-nowrap", isCompact ? "text-[8px]" : "text-[10px]")}>
                             Última: {formatDistanceToNow(new Date(task.lastCompletedDate), { addSuffix: true, locale: ptBR })}
                         </div>
@@ -429,11 +568,29 @@ export const TaskItem: React.FC<TaskItemProps> = ({ task, onToggle, onEdit, onDu
         </div>
 
         {/* Description Accordion */}
-        <div className={cn(
-            "overflow-hidden transition-all duration-300 ease-in-out",
+        <div 
+            onClick={(e) => e.stopPropagation()}
+            onMouseDown={(e) => e.stopPropagation()}
+            className={cn(
+            "overflow-hidden transition-all duration-300 ease-in-out cursor-text",
             isExpanded ? "max-h-[2000px] opacity-100 mt-2" : "max-h-0 opacity-0"
         )}>
-             {task.description && <p className="text-xs text-gray-500 border-t border-gray-100 pt-2 whitespace-pre-wrap">{task.description}</p>}
+             {task.description && (
+               <div className="border-t border-gray-100 pt-2">
+                 <RichTextDisplay 
+                    content={task.description} 
+                    className="text-xs text-gray-500" 
+                    onCheckboxChange={(newContent) => {
+                        // Use onUpdate if available for silent update, otherwise fallback to onEdit (which might open modal)
+                        if (onUpdate) {
+                            onUpdate({ ...task, description: newContent });
+                        } else {
+                            onEdit({ ...task, description: newContent });
+                        }
+                    }}
+                 />
+               </div>
+             )}
              <TaskStatisticsChart taskId={task.id} enabled={isExpanded} />
         </div>
       </div>

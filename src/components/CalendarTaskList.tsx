@@ -21,6 +21,7 @@ interface CalendarTaskListProps {
   onEdit: (task: Task) => void;
   onDuplicate: (task: Task) => void;
   onDelete: (task: Task) => void;
+  onUpdate?: (task: Task) => void;
 }
 
 // Função auxiliar para adicionar intervalo baseado na frequência
@@ -153,6 +154,9 @@ const filterTasksByPeriod = (
   const filtered: TaskWithOccurrences[] = [];
   
   for (const task of tasks) {
+    // Ignorar tarefas suspensas
+    if (task.isSuspended) continue;
+
     // Objetivos diários só aparecem em "Hoje"
     if (task.type === 'objective') {
       if (period === 'today') {
@@ -289,7 +293,8 @@ export const CalendarTaskList: React.FC<CalendarTaskListProps> = ({
   onToggle,
   onEdit,
   onDuplicate,
-  onDelete
+  onDelete,
+  onUpdate
 }) => {
   const [expandedTaskId, setExpandedTaskId] = useState<string | null>(null);
   
@@ -363,6 +368,7 @@ export const CalendarTaskList: React.FC<CalendarTaskListProps> = ({
                 onEdit={onEdit}
                 onDuplicate={onDuplicate}
                 onDelete={onDelete}
+                onUpdate={onUpdate}
                 isExpanded={expandedTaskId === task.id}
                 onToggleExpand={() => handleToggleExpand(task.id)}
                 occurrenceCount={task.occurrenceCount}

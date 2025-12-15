@@ -33,7 +33,9 @@ const mapTaskFromSupabase = (t: any, userId: string): Task => ({
   unit: t.unit,
   deadline: t.deadline ? new Date(t.deadline) : undefined,
   colorTag: t.color_tag, // snake_case -> camelCase
-  tags: t.tags
+  tags: t.tags,
+  isSuspended: t.is_suspended, // snake_case -> camelCase
+  suspendedUntil: t.suspended_until ? new Date(t.suspended_until) : undefined
 });
 
 const mapTaskHistoryFromSupabase = (th: any, userId: string): TaskHistory => ({
@@ -80,6 +82,7 @@ export function useSync() {
              if (cleanData.date) dateFields.date = new Date(cleanData.date).toISOString();
              if (cleanData.lastCompletedDate) dateFields.last_completed_date = new Date(cleanData.lastCompletedDate).toISOString();
              if (cleanData.deadline) dateFields.deadline = new Date(cleanData.deadline).toISOString();
+             if (cleanData.suspendedUntil) dateFields.suspended_until = new Date(cleanData.suspendedUntil).toISOString();
           } else if (item.table === 'task_history') {
              if (cleanData.date) dateFields.date = new Date(cleanData.date).toISOString();
           }
@@ -114,7 +117,9 @@ export function useSync() {
                   unit: cleanData.unit,
                   deadline: dateFields.deadline || null,
                   color_tag: cleanData.colorTag, // camelCase -> snake_case
-                  tags: cleanData.tags
+                  tags: cleanData.tags,
+                  is_suspended: cleanData.isSuspended || false, // camelCase -> snake_case
+                  suspended_until: dateFields.suspended_until || null
               };
           } else if (tableName === 'cloud_task_history') {
               finalPayload = {

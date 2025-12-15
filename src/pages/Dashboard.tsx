@@ -18,6 +18,7 @@ import { useAuth } from "../contexts/AuthContext";
 import { useUndo } from "../contexts/UndoContext";
 import { MeasurementInputModal } from "../components/MeasurementInputModal";
 import { UndoButton } from "../components/UndoButton";
+import { TaskActionModal } from "../components/TaskActionModal";
 
 // Função para verificar se uma tarefa está "pendente" (vencida)
 // Apenas tarefas imediatas e recorrentes, nunca objetivos
@@ -72,6 +73,10 @@ export const Dashboard: React.FC = () => {
   const [editingTask, setEditingTask] = useState<Task | null>(null);
   const [copyTask, setCopyTask] = useState<Task | null>(null);
   const [editingGroup, setEditingGroup] = useState<Group | null>(null);
+  
+  // Estado para o modal de ação (excluir/suspender)
+  const [isTaskActionModalOpen, setIsTaskActionModalOpen] = useState(false);
+  const [taskToAction, setTaskToAction] = useState<Task | null>(null);
 
   // Estados para modal de medição
   const [completingTask, setCompletingTask] = useState<Task | null>(null);
@@ -263,6 +268,23 @@ export const Dashboard: React.FC = () => {
   };
 
   const handleToggleTask = async (task: Task) => {
+    // Se a tarefa estiver suspensa, reativá-la
+    if (task.isSuspended) {
+        const previousTask = { ...task };
+        await db.tasks.update(task.id, {
+            isSuspended: false,
+            suspendedUntil: undefined
+        });
+
+        // Registrar ação para desfazer
+        pushAction({
+            type: 'update_task',
+            previousState: { task: previousTask },
+            metadata: { taskId: task.id },
+        });
+        return;
+    }
+
     const hasMeasures = task.measures && task.measures.length > 0;
     
     // Check if we are completing the task
@@ -314,26 +336,51 @@ export const Dashboard: React.FC = () => {
   }, [tasks]);
 
   const handleDeleteTask = async (task: Task) => {
-      if (confirm('Tem certeza que deseja excluir esta tarefa?')) {
-          // Salvar estado anterior (tarefa e histórico) para desfazer
-          const taskHistory = await db.taskHistory.where('taskId').equals(task.id).toArray();
-          
-          pushAction({
-              type: 'delete_task',
-              previousState: {
-                  task: { ...task },
-                  taskHistory: taskHistory.map(h => ({ ...h })),
-              },
-              metadata: {
-                  taskId: task.id,
-              },
-          });
+      // Salvar estado anterior (tarefa e histórico) para desfazer
+      const taskHistory = await db.taskHistory.where('taskId').equals(task.id).toArray();
+      
+      pushAction({
+          type: 'delete_task',
+          previousState: {
+              task: { ...task },
+              taskHistory: taskHistory.map(h => ({ ...h })),
+          },
+          metadata: {
+              taskId: task.id,
+          },
+      });
 
-          await db.transaction('rw', db.tasks, db.taskHistory, async () => {
-              await db.taskHistory.where('taskId').equals(task.id).delete();
-              await db.tasks.delete(task.id);
-          });
-      }
+      await db.transaction('rw', db.tasks, db.taskHistory, async () => {
+          await db.taskHistory.where('taskId').equals(task.id).delete();
+          await db.tasks.delete(task.id);
+      });
+      
+      setIsTaskActionModalOpen(false);
+      setTaskToAction(null);
+  };
+  
+  const handleOpenTaskAction = (task: Task) => {
+    setTaskToAction(task);
+    setIsTaskActionModalOpen(true);
+  };
+
+  const handleSuspendTask = async (task: Task, until?: Date) => {
+    const previousTask = { ...task };
+    
+    await db.tasks.update(task.id, {
+        isSuspended: true,
+        suspendedUntil: until
+    });
+
+    // Registrar ação para desfazer
+    pushAction({
+        type: 'update_task',
+        previousState: { task: previousTask },
+        metadata: { taskId: task.id },
+    });
+    
+    setIsTaskActionModalOpen(false);
+    setTaskToAction(null);
   };
   
   const handleCreateTask = () => {
@@ -352,6 +399,13 @@ export const Dashboard: React.FC = () => {
       setCopyTask(task);
       setEditingTask(null);
       setIsTaskModalOpen(true);
+  };
+
+  const handleSilentUpdateTask = async (task: Task) => {
+      // Updates the task immediately in the DB without UI state changes
+      if (!task.id) return;
+      // Use Partial<Task> casting or explicit update to avoid TS type check on index signatures
+      await db.tasks.update(task.id, task as any);
   };
 
   const handleSaveTask = async (taskData: Partial<Task>) => {
@@ -563,7 +617,8 @@ export const Dashboard: React.FC = () => {
               onToggle={handleToggleTask}
               onEdit={handleEditTask}
               onDuplicate={handleDuplicateTask}
-              onDelete={handleDeleteTask}
+              onDelete={handleOpenTaskAction}
+              onUpdate={handleSilentUpdateTask}
             />
           </>
         ) : (
@@ -624,7 +679,8 @@ export const Dashboard: React.FC = () => {
                     onToggle={handleToggleTask}
                     onEdit={handleEditTask}
                     onDuplicate={handleDuplicateTask}
-                    onDelete={handleDeleteTask}
+                    onDelete={handleOpenTaskAction}
+                    onUpdate={handleSilentUpdateTask}
                 />
             )}
           </>
@@ -678,6 +734,14 @@ export const Dashboard: React.FC = () => {
         />
 
         <UndoButton />
+        
+        <TaskActionModal 
+            isOpen={isTaskActionModalOpen}
+            onClose={() => setIsTaskActionModalOpen(false)}
+            task={taskToAction}
+            onDelete={handleDeleteTask}
+            onSuspend={handleSuspendTask}
+        />
     </div>
   );
 };

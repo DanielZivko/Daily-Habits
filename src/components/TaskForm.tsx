@@ -8,6 +8,7 @@ import { Zap, RotateCw, Flag, Plus, Trash2, Clock, Calendar, Target } from "luci
 import { cn } from "../lib/utils";
 import { useAuth } from "../contexts/AuthContext";
 import { addMinutes, addHours, addDays, addWeeks, addMonths, differenceInDays, differenceInHours, differenceInMinutes } from "date-fns";
+import { RichTextEditor } from "./ui/RichTextEditor";
 import { Checkbox } from "./ui/Checkbox";
 
 interface Measure {
@@ -342,11 +343,11 @@ export const TaskForm: React.FC<TaskFormProps> = ({ initialTask, initialGroupId,
 
           <div>
             <label className="mb-1 block text-xs font-medium text-gray-500 uppercase">Descrição (Opcional)</label>
-            <textarea
+            <RichTextEditor
               placeholder="Adicione detalhes, links ou sub-tarefas..."
               value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              className="flex min-h-[80px] w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+              onChange={setDescription}
+              className="min-h-[120px]"
             />
           </div>
         </div>
