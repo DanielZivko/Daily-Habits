@@ -63,10 +63,22 @@ export const RichTextDisplay: React.FC<RichTextDisplayProps> = ({ content, class
 
   const sanitizedContent = DOMPurify.sanitize(content);
 
-  const contentWithTargets = sanitizedContent.replace(
-    /<a /g, 
-    '<a target="_blank" rel="noopener noreferrer" '
-  );
+  // Parse HTML to manipulate links safely
+  const parser = new DOMParser();
+  const doc = parser.parseFromString(sanitizedContent, 'text/html');
+  const links = doc.getElementsByTagName('a');
+  
+  Array.from(links).forEach(link => {
+    link.setAttribute('target', '_blank');
+    link.setAttribute('rel', 'noopener noreferrer');
+    
+    const href = link.getAttribute('href');
+    if (href && !/^https?:\/\//i.test(href) && !/^mailto:/i.test(href)) {
+      link.setAttribute('href', `https://${href}`);
+    }
+  });
+  
+  const contentWithTargets = doc.body.innerHTML;
 
   return (
     <>

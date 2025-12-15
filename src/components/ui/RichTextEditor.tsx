@@ -98,7 +98,12 @@ export const RichTextEditor: React.FC<RichTextEditorProps> = ({ value, onChange,
     if (linkUrl === '') {
       editor.chain().focus().extendMarkRange('link').unsetLink().run();
     } else {
-      editor.chain().focus().extendMarkRange('link').setLink({ href: linkUrl }).run();
+      let finalUrl = linkUrl;
+      // Add https:// if no protocol is present
+      if (finalUrl && !/^https?:\/\//i.test(finalUrl) && !/^mailto:/i.test(finalUrl)) {
+        finalUrl = `https://${finalUrl}`;
+      }
+      editor.chain().focus().extendMarkRange('link').setLink({ href: finalUrl }).run();
     }
     
     setIsLinkPopoverOpen(false);
