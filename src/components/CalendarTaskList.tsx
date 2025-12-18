@@ -59,54 +59,84 @@ const getRecurrenceOccurrences = (
   
   const interval = task.interval || 1;
   const now = new Date();
-  let startCheckDate: Date;
   
   // Determinar a data inicial para começar a contar
-  if (task.lastCompletedDate) {
-    // Se já foi completada, próxima data é lastCompletedDate + intervalo
-    startCheckDate = addInterval(new Date(task.lastCompletedDate), task.frequency, interval);
-  } else {
-    // Se nunca foi completada, usar data de criação + intervalo
-    startCheckDate = addInterval(new Date(task.date), task.frequency, interval);
+  // Baseado na última conclusão ou na data de criação
+  let baseDate = task.lastCompletedDate 
+    ? new Date(task.lastCompletedDate)
+    : new Date(task.date);
+    
+  // A primeira ocorrência a verificar é base + intervalo
+  let checkDate = addInterval(baseDate, task.frequency, interval);
+  
+  // Verificar se é intra-day (horas/minutos)
+  const isIntraDay = ['minutes', 'hours'].includes(task.frequency);
+  
+  // Normalizar checkDate se não for intra-day
+  if (!isIntraDay) {
+    checkDate = startOfDay(checkDate);
   }
-  
-  // Se a primeira ocorrência está no futuro, começar a contar a partir dela
-  // Se está vencida, começar a contar a partir de agora (para incluir vencidas)
-  let checkDate = isBefore(startCheckDate, now) ? now : startCheckDate;
-  
-  // Ajustar para o início do dia para comparações consistentes
-  checkDate = startOfDay(checkDate);
+
+  // Definir datas de comparação normalizadas
+  // Se intra-day, usamos precisão total. Se dias, usamos startOfDay/endOfDay.
+  const compareStartDate = isIntraDay ? startDate : startOfDay(startDate);
+  // endOfDay garante até 23:59:59.999
+  const compareEndDate = isIntraDay ? endDate : endOfDay(endDate);
+  const compareNow = isIntraDay ? now : startOfDay(now);
   
   let count = 0;
   const maxIterations = 1000; // Limite de segurança
   let iterations = 0;
+  let hasOverdue = false;
   
-  // Contar todas as ocorrências dentro do período
-  while ((isBefore(checkDate, endDate) || isSameDay(checkDate, endDate)) && iterations < maxIterations) {
-    const isOverdue = isBefore(checkDate, now);
-    const isInPeriod = isAfter(checkDate, startDate) || isSameDay(checkDate, startDate);
-    
-    // Tarefas vencidas só contam se for o período "Hoje"
-    if (isOverdue && period !== 'today') {
-      // Pular ocorrências vencidas quando não for "Hoje"
-      checkDate = addInterval(checkDate, task.frequency, interval);
-      checkDate = startOfDay(checkDate);
-      iterations++;
-      continue;
+  // Verifica atrasos e ocorrências futuras mantendo a fase correta
+  while (iterations < maxIterations) {
+    // Parar se passamos do fim do período de visualização
+    if (isIntraDay) {
+      if (checkDate.getTime() > compareEndDate.getTime()) break;
+    } else {
+      if (isAfter(checkDate, compareEndDate) && !isSameDay(checkDate, compareEndDate)) break;
+    }
+
+    // Verificar se está atrasada (antes de agora)
+    let isOverdue = false;
+    if (isIntraDay) {
+      isOverdue = checkDate.getTime() < compareNow.getTime();
+    } else {
+      isOverdue = isBefore(checkDate, compareNow);
     }
     
-    // Incluir se está dentro do período OU se está vencida (mas só se for "Hoje")
-    if (isInPeriod || (isOverdue && period === 'today')) {
-      count++;
+    if (isOverdue) {
+      // Marcamos que existe pendência, mas não somamos ao count imediatamente
+      // para evitar acumular 1000 pendências. Contaremos como 1 pendência no final.
+      hasOverdue = true;
+    } else {
+      // Se não é atrasada, verificar se está dentro do período de visualização
+      // (Já sabemos que checkDate <= compareEndDate pelo while condition)
+      let isAfterStart = false;
+      if (isIntraDay) {
+        isAfterStart = checkDate.getTime() >= compareStartDate.getTime();
+      } else {
+        isAfterStart = isAfter(checkDate, compareStartDate) || isSameDay(checkDate, compareStartDate);
+      }
+      
+      if (isAfterStart) {
+        count++;
+      }
     }
+    
+    // Avançar para a próxima ocorrência
     checkDate = addInterval(checkDate, task.frequency, interval);
-    checkDate = startOfDay(checkDate); // Normalizar para início do dia
+    if (!isIntraDay) {
+      checkDate = startOfDay(checkDate);
+    }
     iterations++;
   }
   
-  // Se a tarefa está vencida e não encontramos nenhuma ocorrência, contar pelo menos 1 (só se for "Hoje")
-  if (count === 0 && isBefore(startCheckDate, now) && period === 'today') {
-    count = 1;
+  // Se tem tarefas atrasadas e estamos vendo "Hoje", adiciona 1 ao contador
+  // Isso garante que tarefas atrasadas apareçam, mas não polui com "100x"
+  if (hasOverdue && period === 'today') {
+    count++;
   }
   
   return count;
